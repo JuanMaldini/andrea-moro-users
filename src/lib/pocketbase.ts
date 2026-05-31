@@ -29,7 +29,7 @@ export async function createServerClient(): Promise<PocketBase> {
   const pb = new PocketBase(PB_URL);
   pb.autoCancellation(false);
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies(); // Next.js 15: cookies() es async
   const authCookie = cookieStore.get("pb_auth");
 
   if (authCookie?.value) {

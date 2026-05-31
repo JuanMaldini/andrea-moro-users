@@ -4,11 +4,11 @@
 
 | Capa | Tecnología |
 |---|---|
-| Framework | Next.js 14 (App Router) |
+| Framework | Next.js 15 (App Router) |
 | Lenguaje | TypeScript |
 | Estilos | Tailwind CSS (misma paleta que `andrea-moro`) |
-| Base de datos / Auth | PocketBase |
-| SDK cliente | `pocketbase` npm |
+| Base de datos / Auth | PocketBase (pocketbase@^0.21.x) |
+| Package manager | pnpm |
 | Email (futuro) | Resend (SMTP en PocketBase settings) |
 | Deploy | Vercel |
 
@@ -124,24 +124,30 @@ PB_ADMIN_TOKEN=...
 ## Setup local
 
 ```bash
-# 1. Instalar dependencias
-npm install
+# 1. Instalar dependencias (requiere pnpm — instálalo con: npm install -g pnpm)
+pnpm install
 
 # 2. Configurar env
-cp .env.example .env
-# Editar .env con tus valores
+# Editar .env con tus valores (ya existe con las credenciales de PocketBase)
 
 # 3. Arrancar
-npm run dev
+pnpm dev
 # → http://localhost:3000
 ```
 
 ## Deploy en Vercel
 
+Vercel detecta pnpm automáticamente por la presencia de `pnpm-lock.yaml` y el campo
+`"packageManager"` en package.json. El `vercel.json` también lo fuerza explícitamente.
+
 ```bash
-# Conectar repo en vercel.com
-# Añadir variables de entorno en Vercel Dashboard > Settings > Environment Variables
-# La misma lista que en .env.example
+# Conectar repo en vercel.com → Import Project
+# Añadir variables de entorno en: Vercel Dashboard > Settings > Environment Variables
+# Variables necesarias (ver .env.example):
+#   NEXT_PUBLIC_PB_URL
+#   NEXT_PUBLIC_PB_USERS
+#   NEXT_PUBLIC_PB_DATA
+#   PB_ADMIN_TOKEN  (solo server-side)
 ```
 
 ---

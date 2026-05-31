@@ -2,6 +2,7 @@
 node_modules/
 .pnp
 .pnp.js
+.pnpm-store/
 
 # Build output
 .next/
@@ -27,7 +28,13 @@ next-env.d.ts
 .DS_Store
 Thumbs.db
 
-# Logs
+# Archivos temporales de pnpm/npm
+_tmp_*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+
+# Lockfiles alternativos — solo usamos pnpm-lock.yaml
+package-lock.json
+yarn.lock
