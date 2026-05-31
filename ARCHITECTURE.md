@@ -33,13 +33,26 @@
 | Campo | Tipo | Notas |
 |---|---|---|
 | id | Text | Auto |
-| **title** | Text | ⚠️ AÑADIR en PocketBase |
-| **description** | Text | ⚠️ AÑADIR en PocketBase |
-| files | File (Multiple) | Los archivos de video del curso |
-| field | Relation → andreamoro_user (Multiple) | Usuarios con acceso |
+| files | File (Multiple) | Los archivos de video subidos |
+| title | Text | Indexado, filtrable |
+| description | Text | Indexado, filtrable |
+| json | JSON | Metadata flexible (ver estructura abajo) |
 | created / updated | Date | Auto |
 
-> **Acción requerida**: añadir `title` y `description` a `andreamoro_data` en PocketBase Admin UI.
+**Estructura del campo `json`:**
+```json
+{
+  "published": true,
+  "users": ["user_id_1", "user_id_2"],
+  "videos": [
+    { "file": "video1.mp4", "name": "Introducción", "order": 1 },
+    { "file": "video2.mp4", "name": "Técnica base",  "order": 2 }
+  ]
+}
+```
+- `published`: si es `false`, el curso no aparece para los usuarios (el admin sí lo ve)
+- `users`: IDs de `andreamoro_user` con acceso al curso
+- `videos`: orden y nombre de cada video; `file` debe coincidir con el nombre subido en `files`
 
 ---
 

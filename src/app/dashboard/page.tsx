@@ -1,46 +1,62 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createServerClient, COLLECTION_DATA } from "@/lib/pocketbase";
+import { log } from "@/lib/logger";
 import LogoutButton from "@/components/LogoutButton";
 
-interface Course {
+// Solo lo flexible va en json: acceso de usuarios, orden de videos, estado
+interface CourseJson {
+  published?: boolean;
+  users?: string[];
+  videos?: { file: string; name: string; order: number }[];
+}
+
+interface CourseRecord {
   id: string;
-  title?: string;
-  description?: string;
-  files?: string[];
-  field?: string[];
+  files: string[];
+  title: string;        // campo propio — indexado, filtrable
+  description: string;  // campo propio — indexado, filtrable
+  json: CourseJson;
   created: string;
 }
 
 export default async function DashboardPage() {
   const pb = await createServerClient();
 
-  if (!pb.authStore.isValid) {
+  if (!pb.authStore.isValid) redirect("/");
+
+  let userId = "";
+  let userEmail = "";
+  let isAdmin = false;
+  try {
+    const { record } = await pb.collection("andreamoro_user").authRefresh();
+    userId    = record.id;
+    userEmail = record.email as string;
+    isAdmin   = record.admin === true;
+  } catch (err) {
+    log.error("authRefresh en /dashboard", err);
     redirect("/");
   }
 
-  const user = pb.authStore.model;
-  const isAdmin = user?.admin === true;
-
-  let courses: Course[] = [];
+  let courses: CourseRecord[] = [];
 
   try {
     if (isAdmin) {
-      // Admin ve todos los cursos
       courses = await pb
         .collection(COLLECTION_DATA)
-        .getFullList<Course>({ sort: "-created" });
+        .getFullList<CourseRecord>({ sort: "title" });
     } else {
-      // Usuario ve solo los cursos donde aparece en `field`
-      courses = await pb
+      const all = await pb
         .collection(COLLECTION_DATA)
-        .getFullList<Course>({
-          filter: `field ~ "${user?.id}"`,
-          sort: "-created",
+        .getFullList<CourseRecord>({
+          filter: `json ~ '"${userId}"'`,
+          sort: "title",
         });
+      courses = all.filter((c) => c.json?.published !== false);
     }
-  } catch (err) {
-    console.error("Error cargando cursos:", err);
+  } catch {
+    // Colección vacía o sin acceso — simplemente no hay cursos
+    courses = [];
   }
 
   return (
@@ -61,14 +77,13 @@ export default async function DashboardPage() {
               </Link>
             )}
             <span className="text-xs text-grisclarito hidden sm:block">
-              {user?.email}
+              {userEmail}
             </span>
             <LogoutButton />
           </div>
         </div>
       </nav>
 
-      {/* Contenido */}
       <div className="max-w-5xl mx-auto px-6 py-12">
         <h2 className="text-xs uppercase tracking-widest text-marroncalido mb-8">
           {isAdmin ? "Todos los cursos" : "Mis cursos"}
@@ -82,43 +97,42 @@ export default async function DashboardPage() {
                 : "No tienes cursos asignados todavía."}
             </p>
             {isAdmin && (
-              <Link
-                href="/admin"
-                className="inline-block mt-4 text-sm text-marron hover:underline"
-              >
+              <Link href="/admin" className="inline-block mt-4 text-sm text-marron hover:underline">
                 Ir a Admin →
               </Link>
             )}
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
-            {courses.map((course) => (
-              <div
-                key={course.id}
-                className="bg-blanco p-6 shadow-sm hover:shadow-md transition-shadow"
-              >
-                <h3 className="font-medium text-marron text-sm">
-                  {course.title || "Sin título"}
-                </h3>
-                {course.description && (
-                  <p className="text-xs text-grisclarito mt-1 line-clamp-2">
-                    {course.description}
-                  </p>
-                )}
-                <div className="flex items-center justify-between mt-4">
-                  <span className="text-xs text-grisclarito">
-                    {course.files?.length ?? 0} video
-                    {(course.files?.length ?? 0) !== 1 ? "s" : ""}
-                  </span>
-                  <Link
-                    href={`/curso/${course.id}`}
-                    className="text-xs text-marron hover:underline uppercase tracking-widest"
-                  >
-                    Ver →
-                  </Link>
+            {courses.map((course) => {
+              const videoCount = course.json?.videos?.length ?? course.files?.length ?? 0;
+              return (
+                <div
+                  key={course.id}
+                  className="bg-blanco p-6 shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <h3 className="font-medium text-marron text-sm">
+                    {course.title || "Sin título"}
+                  </h3>
+                  {course.description && (
+                    <p className="text-xs text-grisclarito mt-1 line-clamp-2">
+                      {course.description}
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between mt-4">
+                    <span className="text-xs text-grisclarito">
+                      {videoCount} video{videoCount !== 1 ? "s" : ""}
+                    </span>
+                    <Link
+                      href={`/curso/${course.id}`}
+                      className="text-xs text-marron hover:underline uppercase tracking-widest"
+                    >
+                      Ver →
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

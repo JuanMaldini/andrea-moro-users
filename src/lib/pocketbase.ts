@@ -6,20 +6,13 @@
 import PocketBase from "pocketbase";
 import { cookies } from "next/headers";
 
-const PB_URL =
-  process.env.NEXT_PUBLIC_PB_URL ||
-  process.env.VITE_PB_URL ||
-  "";
+const PB_URL = process.env.NEXT_PUBLIC_PB_URL ?? "";
 
 export const COLLECTION_USERS =
-  process.env.NEXT_PUBLIC_PB_USERS ||
-  process.env.VITE_PB_USERS ||
-  "andreamoro_user";
+  process.env.NEXT_PUBLIC_PB_USERS ?? "andreamoro_user";
 
 export const COLLECTION_DATA =
-  process.env.NEXT_PUBLIC_PB_DATA ||
-  process.env.VITE_PB_DATA ||
-  "andreamoro_data";
+  process.env.NEXT_PUBLIC_PB_DATA ?? "andreamoro_data";
 
 /**
  * Crea un cliente PocketBase autenticado con la cookie de sesión del request.
@@ -47,6 +40,25 @@ export async function createServerClient(): Promise<PocketBase> {
           });
       }
     } catch (_) {}
+  }
+
+  return pb;
+}
+
+/**
+ * Cliente con token de superusuario de PocketBase.
+ * Bypasea emailVisibility y API Rules — usar solo en Server Components
+ * para operaciones de administración (ej: listar todos los usuarios con email).
+ * NUNCA exponer este cliente ni su token al navegador.
+ */
+export function createAdminClient(): PocketBase {
+  const pb = new PocketBase(PB_URL);
+  pb.autoCancellation(false);
+
+  const superToken = process.env.PB_ADMIN_TOKEN ?? "";
+
+  if (superToken) {
+    pb.authStore.save(superToken, null);
   }
 
   return pb;

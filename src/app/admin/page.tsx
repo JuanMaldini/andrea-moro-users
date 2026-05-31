@@ -1,6 +1,12 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createServerClient, COLLECTION_USERS, COLLECTION_DATA } from "@/lib/pocketbase";
+import {
+  createServerClient,
+  createAdminClient,
+  COLLECTION_USERS,
+  COLLECTION_DATA,
+} from "@/lib/pocketbase";
+import { log } from "@/lib/logger";
 import LogoutButton from "@/components/LogoutButton";
 
 interface PbUser {
@@ -11,34 +17,65 @@ interface PbUser {
   created: string;
 }
 
-interface Course {
+interface CourseJson {
+  published?: boolean;
+  users?: string[];
+  videos?: { file: string; name: string; order: number }[];
+}
+
+interface CourseRecord {
   id: string;
-  title?: string;
-  files?: string[];
-  field?: string[];
+  files: string[];
+  title: string;
+  description: string;
+  json: CourseJson;
   created: string;
 }
 
 export default async function AdminPage() {
   const pb = await createServerClient();
 
-  if (!pb.authStore.isValid || !pb.authStore.model?.admin) {
-    redirect("/dashboard");
+  if (!pb.authStore.isValid) redirect("/");
+
+  let isAdmin = false;
+  try {
+    const { record } = await pb.collection(COLLECTION_USERS).authRefresh();
+    isAdmin = record.admin === true;
+  } catch (err) {
+    log.error("authRefresh en /admin", err);
+    redirect("/");
   }
 
+  if (!isAdmin) redirect("/dashboard");
+
+  // El admin client bypasea emailVisibility y API Rules vacías.
+  // Sin PB_ADMIN_TOKEN configurado, ambas fetches fallarán con "Only superusers".
+  const hasAdminToken = !!process.env.PB_ADMIN_TOKEN;
+  const pbAdmin = hasAdminToken ? createAdminClient() : pb;
+
   let users: PbUser[] = [];
-  let courses: Course[] = [];
+  let courses: CourseRecord[] = [];
 
   try {
-    users = await pb
+    users = await pbAdmin
       .collection(COLLECTION_USERS)
       .getFullList<PbUser>({ sort: "email" });
 
-    courses = await pb
-      .collection(COLLECTION_DATA)
-      .getFullList<Course>({ sort: "-created" });
+    users.sort((a, b) => {
+      if (a.admin && !b.admin) return -1;
+      if (!a.admin && b.admin) return 1;
+      return (a.email ?? "").localeCompare(b.email ?? "");
+    });
   } catch (err) {
-    console.error("Admin fetch error:", err);
+    log.error("cargando usuarios", err);
+  }
+
+  try {
+    courses = await pbAdmin
+      .collection(COLLECTION_DATA)
+      .getFullList<CourseRecord>({ sort: "title" });
+  } catch (err) {
+    log.error("cargando cursos", err);
   }
 
   return (
@@ -54,24 +91,25 @@ export default async function AdminPage() {
               ← Dashboard
             </Link>
             <span className="text-grisclarito">·</span>
-            <span className="text-xs uppercase tracking-widest text-marron">
-              Admin
-            </span>
+            <span className="text-xs uppercase tracking-widest text-marron">Admin</span>
           </div>
           <LogoutButton />
         </div>
       </nav>
 
-      {/* Contenido */}
       <div className="max-w-5xl mx-auto px-6 py-12 grid md:grid-cols-2 gap-12">
 
         {/* === Usuarios === */}
         <section>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xs uppercase tracking-widest text-marroncalido">
-              Usuarios ({users.length})
-            </h2>
-          </div>
+          <h2 className="text-xs uppercase tracking-widest text-marroncalido mb-6">
+            Usuarios ({users.length})
+          </h2>
+
+          {!hasAdminToken && (
+            <p className="text-xs text-grisclarito mb-4 border border-grisoscuro px-3 py-2">
+              PB_ADMIN_TOKEN no configurado — algunos emails pueden no ser visibles.
+            </p>
+          )}
 
           <div className="space-y-2">
             {users.map((u) => (
@@ -79,20 +117,16 @@ export default async function AdminPage() {
                 key={u.id}
                 className="bg-blanco px-4 py-3 shadow-sm flex items-center justify-between"
               >
-                <div>
-                  <p className="text-sm text-marron">{u.email}</p>
-                  <p className="text-xs text-grisclarito mt-0.5">
-                    {u.admin ? "Admin" : "Usuario"}
-                    {u.verified ? "" : " · No verificado"}
-                  </p>
-                </div>
+                <p className="text-sm text-marron">{u.email}</p>
+                {u.admin && (
+                  <span className="text-xs text-marroncalido uppercase tracking-widest">
+                    Admin
+                  </span>
+                )}
               </div>
             ))}
-
             {users.length === 0 && (
-              <p className="text-xs text-grisclarito text-center py-6">
-                No hay usuarios todavía.
-              </p>
+              <p className="text-xs text-grisclarito text-center py-6">No hay usuarios.</p>
             )}
           </div>
         </section>
@@ -103,9 +137,8 @@ export default async function AdminPage() {
             <h2 className="text-xs uppercase tracking-widest text-marroncalido">
               Cursos ({courses.length})
             </h2>
-            {/* TODO: enlazar a /admin/nuevo-curso en la próxima iteración */}
             <span
-              title="Próximamente: crear curso desde aquí"
+              title="Próximamente"
               className="text-xs text-grisclarito border border-grisoscuro px-3 py-1 cursor-not-allowed"
             >
               + Nuevo
@@ -113,54 +146,32 @@ export default async function AdminPage() {
           </div>
 
           <div className="space-y-2">
-            {courses.map((c) => (
-              <div key={c.id} className="bg-blanco px-4 py-3 shadow-sm">
-                <p className="text-sm text-marron">{c.title || "Sin título"}</p>
-                <p className="text-xs text-grisclarito mt-0.5">
-                  {c.files?.length ?? 0} video
-                  {(c.files?.length ?? 0) !== 1 ? "s" : ""} ·{" "}
-                  {c.field?.length ?? 0} usuario
-                  {(c.field?.length ?? 0) !== 1 ? "s" : ""} asignado
-                  {(c.field?.length ?? 0) !== 1 ? "s" : ""}
-                </p>
-              </div>
-            ))}
-
+            {courses.map((c) => {
+              const videoCount = c.json?.videos?.length ?? c.files?.length ?? 0;
+              const userCount  = c.json?.users?.length ?? 0;
+              return (
+                <div key={c.id} className="bg-blanco px-4 py-3 shadow-sm">
+                  <p className="text-sm text-marron">
+                    {c.title || "Sin título"}
+                    {c.json?.published === false && (
+                      <span className="ml-2 text-xs text-grisclarito">(no publicado)</span>
+                    )}
+                  </p>
+                  <p className="text-xs text-grisclarito mt-0.5">
+                    {videoCount} video{videoCount !== 1 ? "s" : ""} ·{" "}
+                    {userCount} usuario{userCount !== 1 ? "s" : ""} asignado
+                    {userCount !== 1 ? "s" : ""}
+                  </p>
+                </div>
+              );
+            })}
             {courses.length === 0 && (
               <p className="text-xs text-grisclarito text-center py-6">
-                Aún no hay cursos.{" "}
-                <span className="block mt-1">
-                  Créalos directamente en PocketBase de momento.
-                </span>
+                Aún no hay cursos. Créalos en PocketBase.
               </p>
             )}
           </div>
         </section>
-      </div>
-
-      {/* Nota de desarrollo */}
-      <div className="max-w-5xl mx-auto px-6 pb-12">
-        <div className="border border-grisoscuro bg-grisclaro px-6 py-4 text-xs text-grisclarito space-y-1">
-          <p className="font-medium text-marroncalido uppercase tracking-widest">
-            Notas para esta fase
-          </p>
-          <p>
-            • Los usuarios se crean manualmente en PocketBase (Admin UI en{" "}
-            <span className="text-marron">
-              {process.env.NEXT_PUBLIC_PB_URL || "tu PocketBase URL"}
-            </span>
-            /_/).
-          </p>
-          <p>
-            • La colección <code>andreamoro_data</code> necesita los campos{" "}
-            <strong>title</strong> (Text) y <strong>description</strong> (Text)
-            para mostrar los cursos correctamente.
-          </p>
-          <p>
-            • La asignación usuario ↔ curso se hace editando el campo{" "}
-            <code>field</code> del curso en PocketBase.
-          </p>
-        </div>
       </div>
     </main>
   );

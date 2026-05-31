@@ -1,63 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const PUBLIC_PATHS = ["/"];
-const ADMIN_PATHS = ["/admin"];
 
 interface PbCookiePayload {
   token?: string;
-  record?: { admin?: boolean };
+  record?: Record<string, unknown>;
 }
 
-function parsePbCookie(rawValue: string): {
-  isAuthenticated: boolean;
-  isAdmin: boolean;
-} {
+/**
+ * El middleware solo verifica AUTENTICACIÓN (token válido y no expirado).
+ * La verificación de rol admin la hace cada Server Component con una
+ * llamada fresca a PocketBase (authRefresh), que es la fuente de verdad.
+ * Así evitamos depender de qué campos incluye PocketBase en la cookie.
+ */
+function isAuthenticated(rawValue: string): boolean {
   try {
     const parsed: PbCookiePayload = JSON.parse(decodeURIComponent(rawValue));
-    if (!parsed.token) return { isAuthenticated: false, isAdmin: false };
+    if (!parsed.token) return false;
 
-    // Decodificar JWT (sin verificar firma — solo para leer exp y campos)
     const [, b64] = parsed.token.split(".");
     const padded = b64 + "==".slice(0, (4 - (b64.length % 4)) % 4);
     const payload = JSON.parse(atob(padded));
 
-    const isAuthenticated =
-      typeof payload.exp === "number" && payload.exp > Date.now() / 1000;
-    const isAdmin = parsed.record?.admin === true;
-
-    return { isAuthenticated, isAdmin };
+    return typeof payload.exp === "number" && payload.exp > Date.now() / 1000;
   } catch {
-    return { isAuthenticated: false, isAdmin: false };
+    return false;
   }
 }
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const authCookie = request.cookies.get("pb_auth");
-
-  const { isAuthenticated, isAdmin } = authCookie?.value
-    ? parsePbCookie(authCookie.value)
-    : { isAuthenticated: false, isAdmin: false };
+  const authenticated = authCookie?.value ? isAuthenticated(authCookie.value) : false;
 
   const isPublicPath = PUBLIC_PATHS.includes(pathname);
-  const isAdminPath = ADMIN_PATHS.some((p) => pathname.startsWith(p));
 
-  // No autenticado intentando acceder a ruta protegida → login
-  if (!isAuthenticated && !isPublicPath) {
+  // No autenticado → login
+  if (!authenticated && !isPublicPath) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);
   }
 
   // Autenticado en login → dashboard
-  if (isAuthenticated && isPublicPath) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    return NextResponse.redirect(url);
-  }
-
-  // Ruta admin sin ser admin → dashboard
-  if (isAdminPath && !isAdmin) {
+  if (authenticated && isPublicPath) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
@@ -67,6 +53,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Excluir assets estáticos, imágenes y favicon
   matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\.png$).*)"],
 };

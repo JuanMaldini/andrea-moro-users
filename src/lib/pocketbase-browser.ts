@@ -7,10 +7,7 @@
 
 import PocketBase from "pocketbase";
 
-const PB_URL =
-  process.env.NEXT_PUBLIC_PB_URL ||
-  process.env.VITE_PB_URL ||
-  "";
+const PB_URL = process.env.NEXT_PUBLIC_PB_URL ?? "";
 
 let pb: PocketBase | null = null;
 
@@ -37,7 +34,7 @@ export function getPocketBase(): PocketBase {
 }
 
 export const COLLECTION_USERS =
-  process.env.NEXT_PUBLIC_PB_USERS || "andreamoro_user";
+  process.env.NEXT_PUBLIC_PB_USERS ?? "andreamoro_user";
 
 export const COLLECTION_DATA =
-  process.env.NEXT_PUBLIC_PB_DATA || "andreamoro_data";
+  process.env.NEXT_PUBLIC_PB_DATA ?? "andreamoro_data";
