@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 interface PbCookiePayload {
   token?: string;
-  record?: Record<string, unknown>;
+  // PocketBase 0.21 exporta el usuario en la clave `model` (no `record`).
+  model?: Record<string, unknown>;
 }
 
 interface AuthState {
@@ -21,7 +22,7 @@ function readAuth(rawValue: string): AuthState {
 
     const valid =
       typeof payload.exp === "number" && payload.exp > Date.now() / 1000;
-    const admin = parsed.record?.admin === true;
+    const admin = parsed.model?.admin === true;
     return { authenticated: valid, admin: valid && admin };
   } catch {
     return { authenticated: false, admin: false };

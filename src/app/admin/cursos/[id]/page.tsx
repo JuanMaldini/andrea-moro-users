@@ -17,7 +17,7 @@ export default async function CursoDetailPage({ params }: Props) {
   const { id } = await params;
 
   const pb = await createServerClient();
-  if (!pb.authStore.isValid || !pb.authStore.record?.admin) redirect("/admin");
+  if (!pb.authStore.isValid || !pb.authStore.model?.admin) redirect("/admin");
 
   let course: CourseRecord | undefined;
   try {

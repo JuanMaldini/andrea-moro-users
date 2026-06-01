@@ -6,7 +6,7 @@ import LogoutButton from "@/components/LogoutButton";
 
 export default async function NuevoCursoPage() {
   const pb = await createServerClient();
-  if (!pb.authStore.isValid || !pb.authStore.record?.admin) redirect("/admin");
+  if (!pb.authStore.isValid || !pb.authStore.model?.admin) redirect("/admin");
 
   return (
     <main className="min-h-screen bg-vanilla">
