@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { CourseVideo } from "@/lib/course-utils";
 
 type State = "presentation" | "access" | "videos";
@@ -30,6 +30,9 @@ export default function CoursePageClient({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [modalVideo, setModalVideo] = useState<CourseVideo | null>(null);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+  const [lightboxVisible, setLightboxVisible] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!published) return;
@@ -42,7 +45,7 @@ export default function CoursePageClient({
   // Close modal on Escape
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setModalVideo(null);
+      if (e.key === "Escape") { setModalVideo(null); closeLightbox(); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -69,6 +72,18 @@ export default function CoursePageClient({
     } finally {
       setLoading(false);
     }
+  }
+
+  function openLightbox(img: string) {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    setLightboxImg(img);
+    // Un frame de margen para que el elemento esté en el DOM antes de la transición
+    requestAnimationFrame(() => requestAnimationFrame(() => setLightboxVisible(true)));
+  }
+
+  function closeLightbox() {
+    setLightboxVisible(false);
+    closeTimerRef.current = setTimeout(() => setLightboxImg(null), 220);
   }
 
   function fileUrl(filename: string) {
@@ -139,12 +154,6 @@ export default function CoursePageClient({
                 {loading ? "Verificando..." : "Entrar"}
               </button>
             </form>
-            <p className="text-center text-xs text-grisclarito mt-6">
-              ¿Problemas?{" "}
-              <a href="mailto:info@andreamorotienda.com" className="text-marron hover:underline">
-                Contacta con Andrea
-              </a>
-            </p>
           </div>
         )}
 
@@ -152,11 +161,14 @@ export default function CoursePageClient({
         {state === "videos" && (
           <div>
             <p className="text-xs uppercase tracking-widest text-grisclarito mb-2">{title}</p>
+            {description && (
+              <p className="text-sm text-marroncalido leading-relaxed mb-4">{description}</p>
+            )}
             <h2 className="text-xl font-light text-marron mb-6">
               {videos.length} lección{videos.length !== 1 ? "es" : ""}
             </h2>
 
-            <div className="bg-blanco shadow-sm divide-y divide-grisoscuro mb-8">
+            <div className="bg-blanco shadow-sm divide-y divide-grisoscuro">
               {videos.map((video, idx) => (
                 <button key={video.file} onClick={() => setModalVideo(video)}
                   className="w-full text-left px-6 py-4 flex items-center gap-4 hover:bg-vanilla transition-colors">
@@ -169,23 +181,70 @@ export default function CoursePageClient({
                 <p className="px-6 py-8 text-xs text-grisclarito text-center">Vídeos en preparación.</p>
               )}
             </div>
-
-            {/* Galería */}
-            {gallery.length > 0 && (
-              <div>
-                <p className="text-xs uppercase tracking-widest text-grisclarito mb-4">Galería</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {gallery.map((filename) => (
-                    <div key={filename} className="aspect-square bg-grisoscuro overflow-hidden">
-                      <img src={fileUrl(filename)} alt="" className="w-full h-full object-cover" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
+
+      {/* Galería — fuera del max-w-xl para crecer hasta 4 cols sin reducir tamaño */}
+      {state === "videos" && gallery.length > 0 && (
+        <div className="px-4 pt-8 pb-12">
+          <p className="text-xs uppercase tracking-widest text-grisclarito mb-4 max-w-xl mx-auto">Galería</p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+              gap: "6px",
+              maxWidth: "720px",
+              margin: "0 auto",
+            }}
+          >
+            {gallery.map((filename) => (
+              <button
+                key={filename}
+                onClick={() => openLightbox(filename)}
+                className="aspect-square bg-grisoscuro overflow-hidden focus:outline-none hover:shadow transition-shadow duration-150"
+              >
+                <img
+                  src={fileUrl(filename)}
+                  alt=""
+                  draggable={false}
+                  className="w-full h-full object-cover select-none"
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox de imagen — fade in/out, fondo oscuro + blur, sin botones, sin crop */}
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-8 pt-12"
+          style={{
+            backgroundColor: `rgba(0,0,0,${lightboxVisible ? 0.88 : 0})`,
+            backdropFilter: `blur(${lightboxVisible ? 8 : 0}px)`,
+            WebkitBackdropFilter: `blur(${lightboxVisible ? 8 : 0}px)`,
+            transition: "background-color 220ms ease, backdrop-filter 220ms ease, -webkit-backdrop-filter 220ms ease",
+          }}
+          onClick={closeLightbox}
+        >
+          {/* stopPropagation solo en la imagen: el padding queda libre para cerrar */}
+          <img
+            src={fileUrl(lightboxImg)}
+            alt=""
+            draggable={false}
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[82vh] max-w-full object-contain select-none"
+            style={{
+              touchAction: "none",
+              WebkitUserDrag: "none",
+              opacity: lightboxVisible ? 1 : 0,
+              transform: lightboxVisible ? "scale(1)" : "scale(0.97)",
+              transition: "opacity 220ms ease, transform 220ms ease",
+            } as React.CSSProperties}
+          />
+        </div>
+      )}
 
       {/* Modal de vídeo */}
       {modalVideo && (

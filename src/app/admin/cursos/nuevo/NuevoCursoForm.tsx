@@ -34,10 +34,10 @@ export default function NuevoCursoForm() {
     try {
       const pb = getPocketBase();
       const record = await pb.collection(COLLECTION_DATA).create({
-        title,
+        title: title.trim(),
         description,
         json: {
-          published: false,
+          published: true,
           slug,
           token: courseToken,
           keys: ["passamt"],

@@ -75,7 +75,7 @@ export default function CursoEditor({ course, host }: Props) {
     try {
       const pb = getPocketBase();
       await pb.collection(COLLECTION_DATA).update(course.id, {
-        title: titleRef.current,
+        title: titleRef.current.trim(),
         description: descriptionRef.current,
         json: {
           ...course.json,

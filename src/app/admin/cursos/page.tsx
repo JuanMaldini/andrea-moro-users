@@ -28,7 +28,7 @@ export default async function CursosPage() {
       <nav className="bg-blanco border-b border-grisoscuro px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <span className="text-xs uppercase tracking-widest text-marron">
-            Cursos
+            Cursos 
           </span>
           <div className="flex items-center gap-4">
             <Link
@@ -102,9 +102,9 @@ export default async function CursosPage() {
 
                   {/* Sección de Slug */}
                   {slug && (
-                    <div className="bg-grisclaro px-3 md:px-4 py-2 md:py-2 border-b-2 border-grisoscuro group-hover:bg-gris200 transition-colors">
-                      <p className="text-xs md:text-sm text-marron font-mono font-semibold break-all">
-                        /{slug}_
+                    <div className="bg-grisclaro px-3 md:px-4 py-2 border-b-2 border-grisoscuro group-hover:bg-gris200 transition-colors">
+                      <p className="text-xs text-marron font-mono font-semibold break-all">
+                        {copyUrl ? copyUrl.replace(host, "") : `/${slug}`}
                       </p>
                     </div>
                   )}

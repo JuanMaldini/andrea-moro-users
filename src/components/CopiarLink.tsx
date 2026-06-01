@@ -31,11 +31,25 @@ export default function CopiarLink({ url }: Props) {
   function handleOpen(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    window.open(url, "_blank", "noopener,noreferrer");
+    // En localhost / desarrollo abre con el host actual para no depender del deploy.
+    // En producción abre la URL real tal cual.
+    const isLocal = window.location.hostname === "localhost" ||
+                    window.location.hostname === "127.0.0.1";
+    const openUrl = isLocal
+      ? url.replace(/^https?:\/\/[^/]+/, window.location.origin)
+      : url;
+    window.open(openUrl, "_blank", "noopener,noreferrer");
   }
 
   return (
     <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+      <button
+        onClick={handleOpen}
+        title="Abrir el curso en una pestaña nueva"
+        className="text-xs md:text-sm font-semibold text-blanco border-2 border-marron bg-marron px-3 md:px-4 py-1.5 md:py-2 hover:bg-marroncalido hover:border-marroncalido hover:shadow-md transition-all duration-200 rounded"
+      >
+        Abrir
+      </button>
       <button
         onClick={handleCopy}
         title={url}
@@ -49,13 +63,6 @@ export default function CopiarLink({ url }: Props) {
         className="text-xs md:text-sm font-semibold text-blanco border-2 border-marron bg-marron px-3 md:px-4 py-1.5 md:py-2 hover:bg-marroncalido hover:border-marroncalido hover:shadow-md transition-all duration-200 rounded"
       >
         WhatsApp
-      </button>
-      <button
-        onClick={handleOpen}
-        title="Abrir el curso en una pestaña nueva"
-        className="text-xs md:text-sm font-semibold text-blanco border-2 border-marron bg-marron px-3 md:px-4 py-1.5 md:py-2 hover:bg-marroncalido hover:border-marroncalido hover:shadow-md transition-all duration-200 rounded"
-      >
-        Abrir
       </button>
     </div>
   );

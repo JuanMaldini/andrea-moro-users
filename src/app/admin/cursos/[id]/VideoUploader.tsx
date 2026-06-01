@@ -21,9 +21,20 @@ interface Props {
   onVideosChange: (videos: CourseVideo[]) => void;
 }
 
+// iPhone graba en .MOV con tipo video/quicktime. WhatsApp usa .mp4.
+// A veces el File.type viene vacío en Safari iOS → lo inferimos por extensión.
+function normalizeVideoType(file: File): string {
+  if (file.type) return file.type;
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  if (ext === "mov") return "video/quicktime";
+  if (ext === "mp4") return "video/mp4";
+  if (ext === "m4v") return "video/x-m4v";
+  if (ext === "avi") return "video/x-msvideo";
+  return "video/mp4"; // fallback seguro
+}
+
 export default function VideoUploader({ courseId, slug, course, videos, onVideosChange }: Props) {
   const [localVideos, setLocalVideos] = useState<CourseVideo[]>(videos);
-  const [showModal, setShowModal] = useState(false);
   const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const [allDone, setAllDone] = useState(false);
@@ -33,68 +44,68 @@ export default function VideoUploader({ courseId, slug, course, videos, onVideos
   const videoUrl = (filename: string) =>
     `${pbUrl}/api/files/${COLLECTION_DATA}/${courseId}/${filename}`;
 
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  // En cuanto el sistema operativo entrega los archivos (onChange), los ponemos
+  // en cola y arrancamos la subida sin que el usuario tenga que hacer nada más.
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files ?? []);
+    e.target.value = "";
     if (!selected.length) return;
+
     const startIdx = localVideos.length + 1;
     const items: UploadItem[] = selected.map((f, i) => {
-      const ext = f.name.split(".").pop() ?? "mp4";
+      const ext = f.name.split(".").pop()?.toLowerCase() ?? "mp4";
       const newName = `${slug}_${startIdx + i}.${ext}`;
-      return { file: f, newName, status: "waiting", progress: 0 };
+      return { file: f, newName, status: "waiting" as const, progress: 0 };
     });
+
     setUploadItems(items);
     setAllDone(false);
-    setShowModal(true);
-    e.target.value = "";
+    // Arranca automáticamente — sin modal ni botón extra.
+    await runUpload(items);
   }
 
-  async function startUpload() {
-    setUploading(true);
+  async function runUpload(items: UploadItem[]) {
     const pb = getPocketBase();
-
     if (!pb.authStore.isValid) {
       alert("Sesión expirada. Recarga la página e inicia sesión de nuevo.");
-      setUploading(false);
       return;
     }
 
+    setUploading(true);
     let newVideos = [...localVideos];
 
-    for (let i = 0; i < uploadItems.length; i++) {
+    for (let i = 0; i < items.length; i++) {
       setUploadItems((prev) =>
         prev.map((it, idx) => (idx === i ? { ...it, status: "uploading", progress: 0 } : it))
       );
-      const item = uploadItems[i];
-      const renamed = new File([item.file], item.newName, { type: item.file.type });
+      const item = items[i];
+      const type = normalizeVideoType(item.file);
+      const renamed = new File([item.file], item.newName, { type });
       try {
-        // files+ → añade sin borrar los vídeos ya subidos. Con progreso real.
         await uploadWithProgress(courseId, "files", [renamed], (pct) => {
           setUploadItems((prev) =>
             prev.map((it, idx) => (idx === i ? { ...it, progress: pct } : it))
           );
         });
-        const newVideo: CourseVideo = {
-          file: item.newName,
-          name: item.newName,
-          order: newVideos.length + 1,
-        };
-        newVideos = [...newVideos, newVideo];
+        newVideos = [
+          ...newVideos,
+          { file: item.newName, name: item.newName, order: newVideos.length + 1 },
+        ];
         setUploadItems((prev) =>
           prev.map((it, idx) => (idx === i ? { ...it, status: "done", progress: 100 } : it))
         );
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         setUploadItems((prev) =>
-          prev.map((it, idx) =>
-            idx === i ? { ...it, status: "error", error: msg } : it
-          )
+          prev.map((it, idx) => (idx === i ? { ...it, status: "error", error: msg } : it))
         );
       }
     }
 
-    // Save updated json.videos (mezclando sobre el json más reciente)
     try {
       await saveVideos(newVideos);
+      // Actualiza el estado local para que el próximo lote numere bien.
+      setLocalVideos(newVideos);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(`Los vídeos se subieron pero no se pudo guardar el orden: ${msg}`);
@@ -105,7 +116,6 @@ export default function VideoUploader({ courseId, slug, course, videos, onVideos
   }
 
   // Guarda json.videos mezclando sobre el json más reciente (no pisa gallery/keys).
-  // No toca el estado local: la UI ya se actualizó de forma optimista.
   async function saveVideos(newVideos: CourseVideo[]) {
     const pb = getPocketBase();
     const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(courseId);
@@ -150,9 +160,6 @@ export default function VideoUploader({ courseId, slug, course, videos, onVideos
     }
   }
 
-  const statusIcon = (s: UploadItem["status"]) =>
-    ({ waiting: "·", uploading: "↑", done: "✓", error: "✗" })[s];
-
   return (
     <section>
       <div className="flex items-center justify-between mb-4">
@@ -161,19 +168,68 @@ export default function VideoUploader({ courseId, slug, course, videos, onVideos
         </h2>
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="text-xs border border-marron text-marron px-4 py-1.5 hover:bg-marron hover:text-blanco transition-colors"
+          disabled={uploading}
+          className="text-xs border border-marron text-marron px-4 py-1.5 hover:bg-marron hover:text-blanco transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          + Añadir vídeos
+          {uploading ? "Subiendo…" : "+ Añadir vídeos"}
         </button>
+        {/* video/* + quicktime explícito cubre MOV de iPhone y MP4 de WhatsApp */}
         <input
           ref={fileInputRef}
           type="file"
-          accept="video/*"
+          accept="video/*,video/quicktime,video/mp4"
           multiple
           className="hidden"
           onChange={handleFileSelect}
         />
       </div>
+
+      {/* Progreso inline — aparece en cuanto iOS entrega los archivos */}
+      {uploadItems.length > 0 && (
+        <div className="mb-4 space-y-3">
+          {uploadItems.map((item, idx) => (
+            <div key={idx}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-mono text-marroncalido truncate flex-1 mr-2">
+                  {item.newName}
+                </span>
+                <span className={`text-xs font-mono flex-shrink-0 ${
+                  item.status === "done"  ? "text-marron" :
+                  item.status === "error" ? "text-rojo"   : "text-grisclarito"
+                }`}>
+                  {item.status === "uploading"
+                    ? `${item.progress}%`
+                    : item.status === "done"  ? "✓"
+                    : item.status === "error" ? "✗"
+                    : "·"}
+                </span>
+              </div>
+              {(item.status === "uploading" || item.status === "done") && (
+                <div className="h-0.5 w-full bg-grisoscuro overflow-hidden">
+                  <div
+                    className="h-full bg-marron transition-[width] duration-150"
+                    style={{ width: `${item.progress}%` }}
+                  />
+                </div>
+              )}
+              {item.error && (
+                <p className="text-xs text-rojo mt-0.5 break-words">{item.error}</p>
+              )}
+            </div>
+          ))}
+          {uploading && (
+            <p className="text-xs text-grisclarito">No cierres esta ventana mientras se suben…</p>
+          )}
+          {allDone && (
+            <button
+              onClick={() => { setUploadItems([]); setAllDone(false); }}
+              className="text-xs text-grisclarito underline"
+            >
+              Limpiar
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="space-y-2">
         {localVideos.map((v, idx) => (
@@ -207,58 +263,6 @@ export default function VideoUploader({ courseId, slug, course, videos, onVideos
           <p className="text-xs text-grisclarito text-center py-6">Sin vídeos. Añade el primero arriba.</p>
         )}
       </div>
-
-      {/* Modal de subida */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 bg-marron bg-opacity-30 flex items-center justify-center px-4">
-          <div className="bg-blanco w-full max-w-md shadow-lg px-6 py-8">
-            <p className="text-xs uppercase tracking-widest text-marroncalido mb-6">Subiendo vídeos</p>
-            <div className="space-y-4 mb-6">
-              {uploadItems.map((item, idx) => (
-                <div key={idx} className="flex items-start gap-3">
-                  <span className={`text-sm flex-shrink-0 font-mono ${
-                    item.status === "done" ? "text-marron" :
-                    item.status === "error" ? "text-rojo" : "text-grisclarito"
-                  }`}>
-                    {statusIcon(item.status)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-marron font-mono truncate">{item.newName}</p>
-                    {/* Barra de progreso minimal */}
-                    {(item.status === "uploading" || item.status === "done") && (
-                      <div className="mt-1 h-1 w-full bg-grisoscuro overflow-hidden">
-                        <div
-                          className="h-full bg-marron transition-[width] duration-150"
-                          style={{ width: `${item.progress}%` }}
-                        />
-                      </div>
-                    )}
-                    {item.error && (
-                      <p className="text-xs text-rojo mt-0.5 break-words">{item.error}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {!uploading && !allDone && (
-              <button onClick={startUpload}
-                className="w-full py-3 bg-marron text-blanco text-xs uppercase tracking-widest hover:bg-marroncalido transition-colors">
-                Iniciar subida
-              </button>
-            )}
-            {uploading && (
-              <p className="text-xs text-grisclarito text-center">Subiendo, no cierres esta ventana…</p>
-            )}
-            {allDone && (
-              <button onClick={() => setShowModal(false)}
-                className="w-full py-3 bg-marron text-blanco text-xs uppercase tracking-widest hover:bg-marroncalido transition-colors">
-                Listo — cerrar
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </section>
   );
 }
