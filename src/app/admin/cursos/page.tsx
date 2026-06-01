@@ -4,6 +4,7 @@ import { createServerClient, createAdminClient, COLLECTION_DATA } from "@/lib/po
 import { type CourseRecord, buildCourseUrl } from "@/lib/course-utils";
 import LogoutButton from "@/components/LogoutButton";
 import CopiarLink from "@/components/CopiarLink";
+import PublishButton from "@/components/PublishButton";
 
 export default async function CursosPage() {
   const pb = await createServerClient();
@@ -102,10 +103,14 @@ export default async function CursosPage() {
 
                   {/* Sección de Slug */}
                   {slug && (
-                    <div className="bg-grisclaro px-3 md:px-4 py-2 border-b-2 border-grisoscuro group-hover:bg-gris200 transition-colors">
-                      <p className="text-xs text-marron font-mono font-semibold break-all">
+                    <div className="bg-grisclaro px-3 md:px-4 py-2 border-b-2 border-grisoscuro group-hover:bg-gris200 transition-colors flex items-center gap-2">
+                      <p className="text-xs text-marron font-mono font-semibold break-all flex-1 min-w-0">
                         {copyUrl ? copyUrl.replace(host, "") : `/${slug}`}
                       </p>
+                      <PublishButton
+                        courseId={course.id}
+                        published={course.json?.published !== false}
+                      />
                     </div>
                   )}
 
