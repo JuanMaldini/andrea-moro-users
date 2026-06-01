@@ -107,9 +107,22 @@ export default function CoursePageClient({
 
         {/* PRESENTACIÓN */}
         {state === "presentation" && (
-          <div className="bg-blanco shadow-sm">
-            <div className="h-48 bg-grisoscuro flex items-center justify-center">
-              <span className="text-grisclarito text-xs uppercase tracking-widest">{title}</span>
+          <div className="bg-blanco shadow-sm rounded-lg overflow-hidden">
+            <div className="relative h-48 bg-grisoscuro flex items-center justify-center overflow-hidden">
+              {gallery.length > 0 && (
+                <img
+                  src={fileUrl(gallery[0])}
+                  alt=""
+                  draggable={false}
+                  className="absolute inset-0 w-full h-full object-cover object-center select-none"
+                />
+              )}
+              {gallery.length > 0 && (
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-black/10" />
+              )}
+              <span className={`relative z-10 text-xs uppercase tracking-widest ${gallery.length > 0 ? "text-blanco" : "text-grisclarito"}`}>
+                {title}
+              </span>
             </div>
             <div className="px-8 py-8">
               <p className="text-xs uppercase tracking-widest text-grisclarito mb-3">Curso</p>
