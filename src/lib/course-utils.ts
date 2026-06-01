@@ -12,12 +12,13 @@ export interface CourseJson {
   token?: string;    // un único token por curso — forma parte de la URL
   keys?: string[];   // lista de correos con acceso
   videos?: CourseVideo[];
+  gallery?: string[]; // nombres de archivo (dentro del campo `files`) que son fotos
 }
 
 export interface CourseRecord {
   id: string;
-  files: string[];      // video files
-  gallery: string[];    // photo files (PocketBase field)
+  files: string[];      // ÚNICO campo de archivos: contiene vídeos Y fotos.
+                        // El reparto (qué es vídeo / qué es foto) vive en `json`.
   title: string;
   description: string;
   json: CourseJson;

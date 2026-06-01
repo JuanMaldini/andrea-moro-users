@@ -45,7 +45,7 @@ export default async function CourseAccessPage({ params }: Props) {
       pbUrl={getPbUrl()}
       collectionName={COLLECTION_DATA}
       published={course.json?.published ?? false}
-      gallery={course.gallery ?? []}
+      gallery={course.json?.gallery ?? []}
     />
   );
 }

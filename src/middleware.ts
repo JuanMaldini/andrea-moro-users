@@ -5,39 +5,47 @@ interface PbCookiePayload {
   record?: Record<string, unknown>;
 }
 
-function isAuthenticated(rawValue: string): boolean {
+interface AuthState {
+  authenticated: boolean;
+  admin: boolean;
+}
+
+function readAuth(rawValue: string): AuthState {
   try {
     const parsed: PbCookiePayload = JSON.parse(decodeURIComponent(rawValue));
-    if (!parsed.token) return false;
+    if (!parsed.token) return { authenticated: false, admin: false };
 
     const [, b64] = parsed.token.split(".");
     const padded = b64 + "==".slice(0, (4 - (b64.length % 4)) % 4);
     const payload = JSON.parse(atob(padded));
 
-    return typeof payload.exp === "number" && payload.exp > Date.now() / 1000;
+    const valid =
+      typeof payload.exp === "number" && payload.exp > Date.now() / 1000;
+    const admin = parsed.record?.admin === true;
+    return { authenticated: valid, admin: valid && admin };
   } catch {
-    return false;
+    return { authenticated: false, admin: false };
   }
 }
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const authCookie = request.cookies.get("pb_auth");
-  const authenticated = authCookie?.value
-    ? isAuthenticated(authCookie.value)
-    : false;
+  const { admin } = authCookie?.value
+    ? readAuth(authCookie.value)
+    : { admin: false };
 
-  // /admin (login) es público — si ya estás autenticado, redirige al panel
+  // /admin (login) es público — si ya eres admin, redirige al panel
   if (pathname === "/admin") {
-    if (authenticated) {
+    if (admin) {
       return NextResponse.redirect(new URL("/admin/cursos", request.url));
     }
     return NextResponse.next();
   }
 
-  // /admin/cursos y subrutas requieren autenticación
+  // /admin/cursos y subrutas requieren ser ADMIN (no basta con estar logueado)
   if (pathname.startsWith("/admin/")) {
-    if (!authenticated) {
+    if (!admin) {
       return NextResponse.redirect(new URL("/admin", request.url));
     }
     return NextResponse.next();

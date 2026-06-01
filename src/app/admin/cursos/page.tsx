@@ -7,7 +7,7 @@ import CopiarLink from "@/components/CopiarLink";
 
 export default async function CursosPage() {
   const pb = await createServerClient();
-  if (!pb.authStore.isValid) redirect("/admin");
+  if (!pb.authStore.isValid || !pb.authStore.record?.admin) redirect("/admin");
 
   const host =
     (process.env["NEXT_PUBLIC_SITE_URL"] as string | undefined) ??
@@ -63,12 +63,19 @@ export default async function CursosPage() {
                 : null;
 
               return (
-                <div key={course.id} className="bg-blanco shadow-sm flex items-center">
-                  {/* Área clickable → edición */}
+                <div
+                  key={course.id}
+                  className="relative bg-blanco shadow-sm flex items-center outline outline-1 outline-transparent hover:outline-marron transition-[outline-color]"
+                >
+                  {/* Link estirado: cubre toda la tarjeta salvo los botones */}
                   <Link
                     href={`/admin/cursos/${course.id}`}
-                    className="flex-1 min-w-0 px-6 py-4 hover:bg-vanilla transition-colors"
-                  >
+                    aria-label={`Editar ${course.title || "curso"}`}
+                    className="absolute inset-0 z-0"
+                  />
+
+                  {/* Contenido (no captura clics → pasan al Link de abajo) */}
+                  <div className="flex-1 min-w-0 px-6 py-4 pointer-events-none">
                     <div className="flex items-center justify-between gap-4">
                       <div className="min-w-0">
                         <p className="text-sm text-marron font-medium truncate">
@@ -90,11 +97,11 @@ export default async function CursosPage() {
                         <p>{videos.length} vídeo{videos.length !== 1 ? "s" : ""}</p>
                       </div>
                     </div>
-                  </Link>
+                  </div>
 
-                  {/* Botón copiar — fuera del Link */}
+                  {/* Botones — por encima del Link, clic independiente */}
                   {copyUrl && (
-                    <div className="px-4 border-l border-grisoscuro">
+                    <div className="relative z-10 px-4">
                       <CopiarLink url={copyUrl} />
                     </div>
                   )}

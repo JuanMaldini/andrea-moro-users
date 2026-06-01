@@ -48,6 +48,9 @@ export default function CursoEditor({ course, host }: Props) {
   // Videos
   const [videos, setVideos] = useState<CourseVideo[]>(course.json?.videos ?? []);
 
+  // Gallery (nombres de archivo dentro de `files` que son fotos)
+  const [gallery, setGallery] = useState<string[]>(course.json?.gallery ?? []);
+
   // Delete course
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -59,6 +62,7 @@ export default function CursoEditor({ course, host }: Props) {
   const slugRef = useRef(slug);
   const keysRef = useRef<string[]>(keys);
   const videosRef = useRef<CourseVideo[]>(videos);
+  const galleryRef = useRef<string[]>(gallery);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const courseToken = course.json?.token ?? "";
@@ -80,6 +84,7 @@ export default function CursoEditor({ course, host }: Props) {
           token: courseToken,
           keys: keysRef.current,
           videos: videosRef.current,
+          gallery: galleryRef.current,
         },
       });
       setSaveStatus("saved");
@@ -126,7 +131,7 @@ export default function CursoEditor({ course, host }: Props) {
     try {
       const pb = getPocketBase();
       await pb.collection(COLLECTION_DATA).update(course.id, {
-        json: { ...course.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current },
+        json: { ...course.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current, gallery: galleryRef.current },
       });
       setKeys(updated);
       setNewEmail("");
@@ -143,7 +148,7 @@ export default function CursoEditor({ course, host }: Props) {
     try {
       const pb = getPocketBase();
       await pb.collection(COLLECTION_DATA).update(course.id, {
-        json: { ...course.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current },
+        json: { ...course.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current, gallery: galleryRef.current },
       });
       setKeys(updated);
     } catch {
@@ -156,6 +161,11 @@ export default function CursoEditor({ course, host }: Props) {
   function handleVideosChange(newVideos: CourseVideo[]) {
     setVideos(newVideos);
     videosRef.current = newVideos;
+  }
+
+  function handleGalleryChange(newGallery: string[]) {
+    setGallery(newGallery);
+    galleryRef.current = newGallery;
   }
 
   // ── Delete course ────────────────────────────────────────────────────────
@@ -281,7 +291,9 @@ export default function CursoEditor({ course, host }: Props) {
       {/* === Galería === */}
       <GalleryUploader
         courseId={course.id}
-        initialFiles={course.gallery ?? []}
+        course={course}
+        gallery={gallery}
+        onGalleryChange={handleGalleryChange}
       />
 
       {/* === Zona peligrosa === */}

@@ -28,6 +28,12 @@ export default function CopiarLink({ url }: Props) {
     );
   }
 
+  function handleOpen(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   return (
     <div className="flex items-center gap-2">
       <button
@@ -43,6 +49,13 @@ export default function CopiarLink({ url }: Props) {
         className="text-xs text-grisclarito border border-grisoscuro px-3 py-1 hover:border-[#25D366] hover:text-[#25D366] transition-colors whitespace-nowrap"
       >
         WhatsApp
+      </button>
+      <button
+        onClick={handleOpen}
+        title="Abrir el curso en una pestaña nueva"
+        className="text-xs text-grisclarito border border-grisoscuro px-3 py-1 hover:border-marron hover:text-marron transition-colors whitespace-nowrap"
+      >
+        Abrir
       </button>
     </div>
   );
