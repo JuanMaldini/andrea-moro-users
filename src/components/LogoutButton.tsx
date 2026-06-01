@@ -9,7 +9,7 @@ export default function LogoutButton() {
   function handleLogout() {
     const pb = getPocketBase();
     pb.authStore.clear(); // dispara onChange → borra la cookie
-    router.push("/");
+    router.push("/admin");
     router.refresh();
   }
 

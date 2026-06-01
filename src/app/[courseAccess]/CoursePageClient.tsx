@@ -1,0 +1,260 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import type { CourseVideo } from "@/lib/course-utils";
+
+type State = "presentation" | "access" | "videos";
+
+interface Props {
+  courseId: string;
+  token: string;
+  title: string;
+  description: string;
+  videos: CourseVideo[];
+  fileIds: string[];
+  pbUrl: string;
+  collectionName: string;
+}
+
+const SESSION_KEY_PREFIX = "course_access_";
+
+export default function CoursePageClient({
+  courseId,
+  token,
+  title,
+  description,
+  videos,
+  fileIds,
+  pbUrl,
+  collectionName,
+}: Props) {
+  const sessionKey = `${SESSION_KEY_PREFIX}${token}`;
+
+  const [state, setState] = useState<State>("presentation");
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [activeVideo, setActiveVideo] = useState<number>(0);
+
+  // Al montar: comprobar si ya hay sesión activa para este token
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(sessionKey);
+      if (saved) {
+        const { validated } = JSON.parse(saved);
+        if (validated) setState("videos");
+      }
+    } catch {
+      // sessionStorage no disponible
+    }
+  }, [sessionKey]);
+
+  async function handleAccessSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/validate-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseId, token, email: email.trim() }),
+      });
+      const { valid } = await res.json();
+
+      if (valid) {
+        try {
+          sessionStorage.setItem(sessionKey, JSON.stringify({ validated: true }));
+        } catch {
+          // sin sessionStorage, igualmente continuamos
+        }
+        setState("videos");
+      } else {
+        setError("Correo no reconocido. Comprueba que usas el mismo correo con el que te registraste.");
+      }
+    } catch {
+      setError("Error de conexión. Inténtalo de nuevo.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // URL de archivo de PocketBase
+  function fileUrl(filename: string) {
+    return `${pbUrl}/api/files/${collectionName}/${courseId}/${filename}`;
+  }
+
+  // Encuentra el nombre del archivo para un video
+  function videoFileUrl(video: CourseVideo) {
+    return fileUrl(video.file);
+  }
+
+  return (
+    <main className="min-h-screen bg-vanilla">
+      {/* Cabecera minimalista */}
+      <header className="border-b border-grisoscuro bg-blanco px-6 py-4">
+        <p className="text-xs tracking-[0.2em] uppercase text-grisclarito text-center">
+          Andrea Moro · Cursos
+        </p>
+      </header>
+
+      <div className="max-w-xl mx-auto px-4 py-12">
+
+        {/* ESTADO 1 — Presentación */}
+        {state === "presentation" && (
+          <div className="bg-blanco shadow-sm">
+            {/* Banner vacío como placeholder de imagen */}
+            <div className="h-48 bg-grisoscuro flex items-center justify-center">
+              <span className="text-grisclarito text-xs uppercase tracking-widest">
+                {title}
+              </span>
+            </div>
+
+            <div className="px-8 py-8">
+              <p className="text-xs uppercase tracking-widest text-grisclarito mb-3">
+                Curso
+              </p>
+              <h1 className="text-2xl font-light text-marron mb-4">{title}</h1>
+              {description && (
+                <p className="text-sm text-marroncalido leading-relaxed mb-8">
+                  {description}
+                </p>
+              )}
+              <p className="text-xs text-grisclarito mb-6">
+                {videos.length} lección{videos.length !== 1 ? "es" : ""}
+              </p>
+              <button
+                onClick={() => setState("access")}
+                className="w-full py-3 bg-marron text-blanco text-xs font-medium uppercase tracking-widest hover:bg-marroncalido transition-colors"
+              >
+                Acceder al curso
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ESTADO 2 — Acceso */}
+        {state === "access" && (
+          <div className="bg-blanco shadow-sm px-8 py-10">
+            <button
+              onClick={() => setState("presentation")}
+              className="text-xs text-grisclarito hover:text-marron mb-8 inline-block transition-colors"
+            >
+              ← Volver
+            </button>
+
+            <p className="text-xs uppercase tracking-widest text-grisclarito mb-2">
+              {title}
+            </p>
+            <h2 className="text-xl font-light text-marron mb-8">Acceso</h2>
+
+            <form onSubmit={handleAccessSubmit} className="space-y-5">
+              <div>
+                <label
+                  htmlFor="email"
+                  className="block text-xs font-medium uppercase tracking-widest text-marroncalido mb-2"
+                >
+                  Tu correo electrónico
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  placeholder="tu@correo.com"
+                  className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors"
+                />
+              </div>
+
+              {error && (
+                <p className="text-rojo text-xs leading-relaxed">{error}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 bg-marron text-blanco text-xs font-medium uppercase tracking-widest hover:bg-marroncalido transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? "Verificando..." : "Entrar"}
+              </button>
+            </form>
+
+            <p className="text-center text-xs text-grisclarito mt-6">
+              ¿Problemas?{" "}
+              <a
+                href="mailto:info@andreamorotienda.com"
+                className="text-marron hover:underline"
+              >
+                Contacta con Andrea
+              </a>
+            </p>
+          </div>
+        )}
+
+        {/* ESTADO 3 — Vídeos */}
+        {state === "videos" && (
+          <div>
+            <p className="text-xs uppercase tracking-widest text-grisclarito mb-2">
+              {title}
+            </p>
+            <h2 className="text-xl font-light text-marron mb-8">
+              {videos.length} lección{videos.length !== 1 ? "es" : ""}
+            </h2>
+
+            {/* Reproductor */}
+            {videos[activeVideo] && (
+              <div className="bg-negro mb-6">
+                <video
+                  key={videoFileUrl(videos[activeVideo])}
+                  controls
+                  className="w-full aspect-video"
+                  src={videoFileUrl(videos[activeVideo])}
+                >
+                  Tu navegador no soporta vídeo HTML5.
+                </video>
+              </div>
+            )}
+
+            {/* Lista de lecciones */}
+            <div className="bg-blanco shadow-sm divide-y divide-grisoscuro">
+              {videos.map((video, idx) => (
+                <button
+                  key={video.file}
+                  onClick={() => setActiveVideo(idx)}
+                  className={`w-full text-left px-6 py-4 flex items-center gap-4 transition-colors ${
+                    idx === activeVideo
+                      ? "bg-vanilla"
+                      : "hover:bg-vanilla"
+                  }`}
+                >
+                  <span
+                    className={`text-xs w-5 text-right flex-shrink-0 ${
+                      idx === activeVideo ? "text-marron" : "text-grisclarito"
+                    }`}
+                  >
+                    {idx + 1}
+                  </span>
+                  <span
+                    className={`text-sm ${
+                      idx === activeVideo ? "text-marron font-medium" : "text-marroncalido"
+                    }`}
+                  >
+                    {video.name}
+                  </span>
+                </button>
+              ))}
+
+              {videos.length === 0 && (
+                <p className="px-6 py-8 text-xs text-grisclarito text-center">
+                  Próximamente — vídeos en preparación.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}

@@ -20,7 +20,7 @@ export default function LoginForm() {
       const pb = getPocketBase();
       await pb.collection(COLLECTION_USERS).authWithPassword(email, password);
       // La cookie se setea automáticamente via el onChange del authStore
-      router.push("/dashboard");
+      router.push("/admin/cursos");
       router.refresh();
     } catch {
       setError("Email o contraseña incorrectos.");

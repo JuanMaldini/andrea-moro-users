@@ -1,18 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/"];
-
 interface PbCookiePayload {
   token?: string;
   record?: Record<string, unknown>;
 }
 
-/**
- * El middleware solo verifica AUTENTICACIÓN (token válido y no expirado).
- * La verificación de rol admin la hace cada Server Component con una
- * llamada fresca a PocketBase (authRefresh), que es la fuente de verdad.
- * Así evitamos depender de qué campos incluye PocketBase en la cookie.
- */
 function isAuthenticated(rawValue: string): boolean {
   try {
     const parsed: PbCookiePayload = JSON.parse(decodeURIComponent(rawValue));
@@ -31,24 +23,27 @@ function isAuthenticated(rawValue: string): boolean {
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const authCookie = request.cookies.get("pb_auth");
-  const authenticated = authCookie?.value ? isAuthenticated(authCookie.value) : false;
+  const authenticated = authCookie?.value
+    ? isAuthenticated(authCookie.value)
+    : false;
 
-  const isPublicPath = PUBLIC_PATHS.includes(pathname);
-
-  // No autenticado → login
-  if (!authenticated && !isPublicPath) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    return NextResponse.redirect(url);
+  // /admin (login) es público — si ya estás autenticado, redirige al panel
+  if (pathname === "/admin") {
+    if (authenticated) {
+      return NextResponse.redirect(new URL("/admin/cursos", request.url));
+    }
+    return NextResponse.next();
   }
 
-  // Autenticado en login → dashboard
-  if (authenticated && isPublicPath) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    return NextResponse.redirect(url);
+  // /admin/cursos y subrutas requieren autenticación
+  if (pathname.startsWith("/admin/")) {
+    if (!authenticated) {
+      return NextResponse.redirect(new URL("/admin", request.url));
+    }
+    return NextResponse.next();
   }
 
+  // Todo lo demás (páginas de curso, /) es público
   return NextResponse.next();
 }
 
