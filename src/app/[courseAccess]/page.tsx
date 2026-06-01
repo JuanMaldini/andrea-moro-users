@@ -51,6 +51,7 @@ export default async function CourseAccessPage({ params }: Props) {
       fileIds={course.files}
       pbUrl={getPbUrl()}
       collectionName={COLLECTION_DATA}
+      published={course.json?.published ?? false}
     />
   );
 }

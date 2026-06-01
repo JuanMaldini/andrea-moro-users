@@ -14,6 +14,7 @@ interface Props {
   fileIds: string[];
   pbUrl: string;
   collectionName: string;
+  published: boolean;
 }
 
 const SESSION_KEY_PREFIX = "course_access_";
@@ -27,6 +28,7 @@ export default function CoursePageClient({
   fileIds,
   pbUrl,
   collectionName,
+  published,
 }: Props) {
   const sessionKey = `${SESSION_KEY_PREFIX}${token}`;
 
@@ -36,8 +38,8 @@ export default function CoursePageClient({
   const [loading, setLoading] = useState(false);
   const [activeVideo, setActiveVideo] = useState<number>(0);
 
-  // Al montar: comprobar si ya hay sesión activa para este token
   useEffect(() => {
+    if (!published) return;
     try {
       const saved = sessionStorage.getItem(sessionKey);
       if (saved) {
@@ -47,13 +49,12 @@ export default function CoursePageClient({
     } catch {
       // sessionStorage no disponible
     }
-  }, [sessionKey]);
+  }, [sessionKey, published]);
 
   async function handleAccessSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
-
     try {
       const res = await fetch("/api/validate-access", {
         method: "POST",
@@ -61,16 +62,15 @@ export default function CoursePageClient({
         body: JSON.stringify({ courseId, token, email: email.trim() }),
       });
       const { valid } = await res.json();
-
       if (valid) {
         try {
           sessionStorage.setItem(sessionKey, JSON.stringify({ validated: true }));
         } catch {
-          // sin sessionStorage, igualmente continuamos
+          // sin sessionStorage, continuamos igual
         }
         setState("videos");
       } else {
-        setError("Correo no reconocido. Comprueba que usas el mismo correo con el que te registraste.");
+        setError("Clave no reconocida. Comprueba que es la correcta.");
       }
     } catch {
       setError("Error de conexión. Inténtalo de nuevo.");
@@ -79,19 +79,16 @@ export default function CoursePageClient({
     }
   }
 
-  // URL de archivo de PocketBase
   function fileUrl(filename: string) {
     return `${pbUrl}/api/files/${collectionName}/${courseId}/${filename}`;
   }
 
-  // Encuentra el nombre del archivo para un video
   function videoFileUrl(video: CourseVideo) {
     return fileUrl(video.file);
   }
 
   return (
     <main className="min-h-screen bg-vanilla">
-      {/* Cabecera minimalista */}
       <header className="border-b border-grisoscuro bg-blanco px-6 py-4">
         <p className="text-xs tracking-[0.2em] uppercase text-grisclarito text-center">
           Andrea Moro · Cursos
@@ -103,7 +100,6 @@ export default function CoursePageClient({
         {/* ESTADO 1 — Presentación */}
         {state === "presentation" && (
           <div className="bg-blanco shadow-sm">
-            {/* Banner vacío como placeholder de imagen */}
             <div className="h-48 bg-grisoscuro flex items-center justify-center">
               <span className="text-grisclarito text-xs uppercase tracking-widest">
                 {title}
@@ -123,18 +119,28 @@ export default function CoursePageClient({
               <p className="text-xs text-grisclarito mb-6">
                 {videos.length} lección{videos.length !== 1 ? "es" : ""}
               </p>
-              <button
-                onClick={() => setState("access")}
-                className="w-full py-3 bg-marron text-blanco text-xs font-medium uppercase tracking-widest hover:bg-marroncalido transition-colors"
-              >
-                Acceder al curso
-              </button>
+
+              {published ? (
+                <button
+                  onClick={() => setState("access")}
+                  className="w-full py-3 bg-marron text-blanco text-xs font-medium uppercase tracking-widest hover:bg-marroncalido transition-colors"
+                >
+                  Acceder al curso
+                </button>
+              ) : (
+                <button
+                  disabled
+                  className="w-full py-3 bg-grisoscuro text-grisclarito text-xs font-medium uppercase tracking-widest cursor-not-allowed"
+                >
+                  Próximamente
+                </button>
+              )}
             </div>
           </div>
         )}
 
-        {/* ESTADO 2 — Acceso */}
-        {state === "access" && (
+        {/* ESTADO 2 — Acceso (solo si publicado) */}
+        {state === "access" && published && (
           <div className="bg-blanco shadow-sm px-8 py-10">
             <button
               onClick={() => setState("presentation")}
@@ -151,16 +157,16 @@ export default function CoursePageClient({
             <form onSubmit={handleAccessSubmit} className="space-y-5">
               <div>
                 <label
-                  htmlFor="email"
+                  htmlFor="clave"
                   className="block text-xs font-medium uppercase tracking-widest text-marroncalido mb-2"
                 >
-                  Tu correo electrónico
+                  Tu correo o clave de acceso
                 </label>
                 <input
-                  id="email"
-                  type="email"
+                  id="clave"
+                  type="text"
                   value={email}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setEmail(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                   required
                   autoComplete="email"
                   placeholder="tu@correo.com"
@@ -203,7 +209,6 @@ export default function CoursePageClient({
               {videos.length} lección{videos.length !== 1 ? "es" : ""}
             </h2>
 
-            {/* Reproductor */}
             {videos[activeVideo] && (
               <div className="bg-negro mb-6">
                 <video
@@ -217,16 +222,13 @@ export default function CoursePageClient({
               </div>
             )}
 
-            {/* Lista de lecciones */}
             <div className="bg-blanco shadow-sm divide-y divide-grisoscuro">
               {videos.map((video, idx) => (
                 <button
                   key={video.file}
                   onClick={() => setActiveVideo(idx)}
                   className={`w-full text-left px-6 py-4 flex items-center gap-4 transition-colors ${
-                    idx === activeVideo
-                      ? "bg-vanilla"
-                      : "hover:bg-vanilla"
+                    idx === activeVideo ? "bg-vanilla" : "hover:bg-vanilla"
                   }`}
                 >
                   <span
@@ -238,7 +240,9 @@ export default function CoursePageClient({
                   </span>
                   <span
                     className={`text-sm ${
-                      idx === activeVideo ? "text-marron font-medium" : "text-marroncalido"
+                      idx === activeVideo
+                        ? "text-marron font-medium"
+                        : "text-marroncalido"
                     }`}
                   >
                     {video.name}

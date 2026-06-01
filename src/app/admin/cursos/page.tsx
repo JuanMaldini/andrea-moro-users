@@ -3,10 +3,15 @@ import Link from "next/link";
 import { createServerClient, createAdminClient, COLLECTION_DATA } from "@/lib/pocketbase";
 import { type CourseRecord, buildCourseUrl } from "@/lib/course-utils";
 import LogoutButton from "@/components/LogoutButton";
+import CopiarLink from "@/components/CopiarLink";
 
 export default async function CursosPage() {
   const pb = await createServerClient();
   if (!pb.authStore.isValid) redirect("/admin");
+
+  const host =
+    (process.env["NEXT_PUBLIC_SITE_URL"] as string | undefined) ??
+    "https://cursos.andreamorotienda.com";
 
   let courses: CourseRecord[] = [];
   try {
@@ -40,13 +45,8 @@ export default async function CursosPage() {
       <div className="max-w-4xl mx-auto px-6 py-10">
         {courses.length === 0 ? (
           <div className="text-center py-20">
-            <p className="text-grisclarito text-sm mb-4">
-              Aún no hay cursos.
-            </p>
-            <Link
-              href="/admin/cursos/nuevo"
-              className="text-xs text-marron hover:underline"
-            >
+            <p className="text-grisclarito text-sm mb-4">Aún no hay cursos.</p>
+            <Link href="/admin/cursos/nuevo" className="text-xs text-marron hover:underline">
               Crear el primer curso →
             </Link>
           </div>
@@ -56,35 +56,50 @@ export default async function CursosPage() {
               const keys = course.json?.keys ?? [];
               const videos = course.json?.videos ?? [];
               const slug = course.json?.slug ?? "";
+              // Preferimos la clave passamt para el link de copia; si no, la primera
+              const defaultKey =
+                keys.find((k) => k.email === "passamt") ?? keys[0];
+              const copyUrl = defaultKey
+                ? `${host}${buildCourseUrl(slug, defaultKey.token)}`
+                : null;
 
               return (
-                <Link
-                  key={course.id}
-                  href={`/admin/cursos/${course.id}`}
-                  className="block bg-blanco px-6 py-4 shadow-sm hover:shadow transition-shadow"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-marron font-medium">
-                        {course.title || "Sin título"}
-                        {course.json?.published === false && (
-                          <span className="ml-2 text-xs text-grisclarito font-normal">
-                            (no publicado)
-                          </span>
-                        )}
-                      </p>
-                      {slug && (
-                        <p className="text-xs text-grisclarito mt-0.5">
-                          /{slug}_…
+                <div key={course.id} className="bg-blanco shadow-sm flex items-center">
+                  {/* Área clickable → edición */}
+                  <Link
+                    href={`/admin/cursos/${course.id}`}
+                    className="flex-1 min-w-0 px-6 py-4 hover:bg-vanilla transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm text-marron font-medium truncate">
+                          {course.title || "Sin título"}
+                          {course.json?.published === false && (
+                            <span className="ml-2 text-xs text-grisclarito font-normal">
+                              (no publicado)
+                            </span>
+                          )}
                         </p>
-                      )}
+                        {slug && (
+                          <p className="text-xs text-grisclarito mt-0.5 font-mono">
+                            /{slug}_…
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right text-xs text-grisclarito flex-shrink-0">
+                        <p>{keys.length} clave{keys.length !== 1 ? "s" : ""}</p>
+                        <p>{videos.length} vídeo{videos.length !== 1 ? "s" : ""}</p>
+                      </div>
                     </div>
-                    <div className="text-right text-xs text-grisclarito">
-                      <p>{keys.length} clave{keys.length !== 1 ? "s" : ""}</p>
-                      <p>{videos.length} vídeo{videos.length !== 1 ? "s" : ""}</p>
+                  </Link>
+
+                  {/* Botón copiar — fuera del Link */}
+                  {copyUrl && (
+                    <div className="px-4 border-l border-grisoscuro">
+                      <CopiarLink url={copyUrl} />
                     </div>
-                  </div>
-                </Link>
+                  )}
+                </div>
               );
             })}
           </div>
