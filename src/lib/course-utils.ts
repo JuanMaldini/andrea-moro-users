@@ -1,12 +1,5 @@
 // Tipos para la estructura de cursos
 
-export interface CourseKey {
-  email: string;   // el correo del alumno (o string libre como "passamt")
-  token: string;   // 8 chars hex aleatorios, forma parte de la URL
-  label?: string;  // nombre opcional (ej: "María García")
-  addedAt: string; // ISO date string
-}
-
 export interface CourseVideo {
   file: string;
   name: string;
@@ -16,13 +9,15 @@ export interface CourseVideo {
 export interface CourseJson {
   published?: boolean;
   slug?: string;
-  keys?: CourseKey[];
+  token?: string;    // un único token por curso — forma parte de la URL
+  keys?: string[];   // lista de correos con acceso
   videos?: CourseVideo[];
 }
 
 export interface CourseRecord {
   id: string;
-  files: string[];
+  files: string[];      // video files
+  gallery: string[];    // photo files (PocketBase field)
   title: string;
   description: string;
   json: CourseJson;

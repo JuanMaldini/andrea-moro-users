@@ -8,11 +8,7 @@ export const metadata: Metadata = {
   description: "Plataforma de cursos de Andrea Moro",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
       <body>

@@ -12,7 +12,6 @@ export default function AdminLoginPage() {
             Panel de administración
           </p>
         </div>
-
         <div className="bg-blanco px-8 py-10 shadow-sm">
           <LoginForm />
         </div>

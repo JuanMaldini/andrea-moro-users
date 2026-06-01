@@ -1,10 +1,6 @@
 import { notFound } from "next/navigation";
 import { createAdminClient, COLLECTION_DATA, getPbUrl } from "@/lib/pocketbase";
-import {
-  parseCourseAccess,
-  type CourseRecord,
-  type CourseVideo,
-} from "@/lib/course-utils";
+import { parseCourseAccess, type CourseRecord, type CourseVideo } from "@/lib/course-utils";
 import CoursePageClient from "./CoursePageClient";
 
 interface Props {
@@ -23,9 +19,7 @@ export default async function CourseAccessPage({ params }: Props) {
     const pb = createAdminClient();
     const results = await pb
       .collection(COLLECTION_DATA)
-      .getFullList<CourseRecord>({
-        filter: `json.slug = "${slug}"`,
-      });
+      .getFullList<CourseRecord>({ filter: `json.slug = "${slug}"` });
     course = results[0] ?? null;
   } catch {
     return notFound();
@@ -33,9 +27,8 @@ export default async function CourseAccessPage({ params }: Props) {
 
   if (!course) return notFound();
 
-  const keys = course.json?.keys ?? [];
-  const keyExists = keys.some((k) => k.token === token);
-  if (!keyExists) return notFound();
+  // Verify course-level token
+  if (course.json?.token !== token) return notFound();
 
   const videos: CourseVideo[] = (course.json?.videos ?? []).sort(
     (a, b) => a.order - b.order
@@ -52,6 +45,7 @@ export default async function CourseAccessPage({ params }: Props) {
       pbUrl={getPbUrl()}
       collectionName={COLLECTION_DATA}
       published={course.json?.published ?? false}
+      gallery={course.gallery ?? []}
     />
   );
 }

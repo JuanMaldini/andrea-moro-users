@@ -57,10 +57,9 @@ export default async function CursosPage() {
               const videos = course.json?.videos ?? [];
               const slug = course.json?.slug ?? "";
               // Preferimos la clave passamt para el link de copia; si no, la primera
-              const defaultKey =
-                keys.find((k) => k.email === "passamt") ?? keys[0];
-              const copyUrl = defaultKey
-                ? `${host}${buildCourseUrl(slug, defaultKey.token)}`
+              const courseToken = course.json?.token;
+              const copyUrl = slug && courseToken
+                ? `${host}${buildCourseUrl(slug, courseToken)}`
                 : null;
 
               return (

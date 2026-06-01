@@ -29,12 +29,7 @@ export default function NuevoCursoForm() {
     setError("");
     setLoading(true);
 
-    const defaultKey = {
-      email: "passamt",
-      token: generateToken(),
-      label: "Clave por defecto",
-      addedAt: new Date().toISOString(),
-    };
+    const courseToken = generateToken();
 
     try {
       const pb = getPocketBase();
@@ -44,7 +39,8 @@ export default function NuevoCursoForm() {
         json: {
           published: false,
           slug,
-          keys: [defaultKey],
+          token: courseToken,
+          keys: ["passamt"],
           videos: [],
         },
       });

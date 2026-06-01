@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { getPocketBase, COLLECTION_DATA } from "@/lib/pocketbase-browser";
 import {
   type CourseRecord,
-  type CourseKey,
   type CourseJson,
-  generateToken,
+  type CourseVideo,
   buildCourseUrl,
 } from "@/lib/course-utils";
+import VideoUploader from "./VideoUploader";
+import GalleryUploader from "./GalleryUploader";
 
 interface Props {
   course: CourseRecord;
@@ -32,32 +33,38 @@ type SaveStatus = "idle" | "saving" | "saved";
 export default function CursoEditor({ course, host }: Props) {
   const router = useRouter();
 
-  // State (for rendering)
   const [title, setTitle] = useState(course.title);
   const [description, setDescription] = useState(course.description);
   const [published, setPublished] = useState(course.json?.published ?? false);
   const [slug, setSlug] = useState(course.json?.slug ?? course.id);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
 
-  const [keys, setKeys] = useState<CourseKey[]>(course.json?.keys ?? []);
+  // Keys: plain email strings
+  const [keys, setKeys] = useState<string[]>((course.json?.keys ?? []) as string[]);
   const [newEmail, setNewEmail] = useState("");
-  const [newLabel, setNewLabel] = useState("");
   const [addingKey, setAddingKey] = useState(false);
   const [keyError, setKeyError] = useState("");
-  const [editingToken, setEditingToken] = useState<string | null>(null);
-  const [editingEmail, setEditingEmail] = useState("");
+
+  // Videos
+  const [videos, setVideos] = useState<CourseVideo[]>(course.json?.videos ?? []);
+
+  // Delete course
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // Refs — always current, used inside timers to avoid stale closures
+  // Refs for debounced save
   const titleRef = useRef(title);
   const descriptionRef = useRef(description);
   const publishedRef = useRef(published);
   const slugRef = useRef(slug);
-  const keysRef = useRef(keys);
+  const keysRef = useRef<string[]>(keys);
+  const videosRef = useRef<CourseVideo[]>(videos);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Core save ──────────────────────────────────────────────────────────────
+  const courseToken = course.json?.token ?? "";
+  const courseUrl = slug && courseToken ? `${host}${buildCourseUrl(slug, courseToken)}` : "";
+
+  // ── Save ────────────────────────────────────────────────────────────────
 
   async function doSave() {
     setSaveStatus("saving");
@@ -70,7 +77,9 @@ export default function CursoEditor({ course, host }: Props) {
           ...course.json,
           published: publishedRef.current,
           slug: slugRef.current,
+          token: courseToken,
           keys: keysRef.current,
+          videos: videosRef.current,
         },
       });
       setSaveStatus("saved");
@@ -86,8 +95,6 @@ export default function CursoEditor({ course, host }: Props) {
     saveTimer.current = setTimeout(doSave, delay);
   }
 
-  // ── Meta handlers (auto-save) ──────────────────────────────────────────────
-
   function handleTitleChange(val: string) {
     const newSlug = slugify(val);
     setTitle(val); titleRef.current = val;
@@ -102,78 +109,56 @@ export default function CursoEditor({ course, host }: Props) {
 
   function handlePublishedChange(val: boolean) {
     setPublished(val); publishedRef.current = val;
-    scheduleSave(0); // immediate
+    scheduleSave(0);
   }
 
-  // ── Keys persistence ───────────────────────────────────────────────────────
-
-  async function persistKeys(updated: CourseKey[]) {
-    keysRef.current = updated;
-    const pb = getPocketBase();
-    const updatedJson: CourseJson = {
-      ...course.json,
-      published: publishedRef.current,
-      slug: slugRef.current,
-      keys: updated,
-    };
-    await pb.collection(COLLECTION_DATA).update(course.id, { json: updatedJson });
-  }
+  // ── Keys (plain emails) ──────────────────────────────────────────────────
 
   async function handleAddKey(e: React.FormEvent) {
     e.preventDefault();
     setKeyError("");
-    const emailTrimmed = newEmail.trim();
-    if (!emailTrimmed) return;
-    if (keys.some((k: CourseKey) => k.email.toLowerCase() === emailTrimmed.toLowerCase())) {
-      setKeyError("Ya existe una clave con ese valor.");
-      return;
-    }
+    const trimmed = newEmail.trim().toLowerCase();
+    if (!trimmed) return;
+    if (keys.includes(trimmed)) { setKeyError("Ya existe."); return; }
     setAddingKey(true);
-    const newKey: CourseKey = {
-      email: emailTrimmed,
-      token: generateToken(),
-      label: newLabel.trim() || undefined,
-      addedAt: new Date().toISOString(),
-    };
-    const updated = [...keys, newKey];
+    const updated = [...keys, trimmed];
+    keysRef.current = updated;
     try {
-      await persistKeys(updated);
+      const pb = getPocketBase();
+      await pb.collection(COLLECTION_DATA).update(course.id, {
+        json: { ...course.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current },
+      });
       setKeys(updated);
       setNewEmail("");
-      setNewLabel("");
     } catch {
-      setKeyError("Error al guardar la clave.");
+      setKeyError("Error al guardar.");
     } finally {
       setAddingKey(false);
     }
   }
 
-  async function handleSaveKeyEdit(token: string) {
-    const trimmed = editingEmail.trim();
-    if (!trimmed) return;
-    const updated = keys.map((k: CourseKey) =>
-      k.token === token ? { ...k, email: trimmed } : k
-    );
+  async function handleDeleteKey(email: string) {
+    const updated = keys.filter((k) => k !== email);
+    keysRef.current = updated;
     try {
-      await persistKeys(updated);
+      const pb = getPocketBase();
+      await pb.collection(COLLECTION_DATA).update(course.id, {
+        json: { ...course.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current },
+      });
       setKeys(updated);
-      setEditingToken(null);
     } catch {
-      alert("Error al guardar el cambio.");
+      alert("Error al eliminar.");
     }
   }
 
-  async function handleDeleteKey(token: string) {
-    const updated = keys.filter((k: CourseKey) => k.token !== token);
-    try {
-      await persistKeys(updated);
-      setKeys(updated);
-    } catch {
-      alert("Error al eliminar la clave.");
-    }
+  // ── Videos callback ──────────────────────────────────────────────────────
+
+  function handleVideosChange(newVideos: CourseVideo[]) {
+    setVideos(newVideos);
+    videosRef.current = newVideos;
   }
 
-  // ── Delete course ──────────────────────────────────────────────────────────
+  // ── Delete course ────────────────────────────────────────────────────────
 
   async function handleDeleteCourse() {
     setDeleting(true);
@@ -193,219 +178,131 @@ export default function CursoEditor({ course, host }: Props) {
     navigator.clipboard.writeText(text).catch(() => {});
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   const statusLabel =
     saveStatus === "saving" ? "Guardando..." :
-    saveStatus === "saved"  ? "Guardado" :
-    null;
+    saveStatus === "saved"  ? "Guardado" : null;
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-12">
 
       {/* === Información === */}
       <section>
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-xs uppercase tracking-widest text-marroncalido">
-            Información
-          </h2>
-          {statusLabel && (
-            <span className="text-xs text-grisclarito transition-opacity">
-              {statusLabel}
-            </span>
-          )}
+          <h2 className="text-xs uppercase tracking-widest text-marroncalido">Información</h2>
+          {statusLabel && <span className="text-xs text-grisclarito">{statusLabel}</span>}
         </div>
-
         <div className="space-y-4">
           <div>
-            <label className="block text-xs uppercase tracking-widest text-grisclarito mb-2">
-              Título
-            </label>
-            <input
-              type="text"
-              value={title}
+            <label className="block text-xs uppercase tracking-widest text-grisclarito mb-2">Título</label>
+            <input type="text" value={title}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleTitleChange(e.target.value)}
-              className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors"
-            />
+              className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors" />
             {slug && (
               <p className="text-xs text-grisclarito mt-1 font-mono">
                 /{slug}_<span className="text-marroncalido">xxxxxxxx</span>
               </p>
             )}
           </div>
-
           <div>
-            <label className="block text-xs uppercase tracking-widest text-grisclarito mb-2">
-              Descripción
-            </label>
-            <textarea
-              value={description}
+            <label className="block text-xs uppercase tracking-widest text-grisclarito mb-2">Descripción</label>
+            <textarea value={description} rows={3}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleDescriptionChange(e.target.value)}
-              rows={3}
-              className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors resize-none"
-            />
+              className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors resize-none" />
           </div>
-
           <div className="flex items-center gap-3">
-            <input
-              id="published"
-              type="checkbox"
-              checked={published}
+            <input id="published" type="checkbox" checked={published}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePublishedChange(e.target.checked)}
-              className="w-4 h-4 accent-marron"
-            />
-            <label htmlFor="published" className="text-xs text-marroncalido">
-              Publicado
-            </label>
+              className="w-4 h-4 accent-marron" />
+            <label htmlFor="published" className="text-xs text-marroncalido">Publicado</label>
           </div>
         </div>
       </section>
 
-      {/* === Claves de acceso === */}
-      <section>
-        <h2 className="text-xs uppercase tracking-widest text-marroncalido mb-5">
-          Claves de acceso ({keys.length})
-        </h2>
-
-        <form onSubmit={handleAddKey} className="bg-blanco shadow-sm px-5 py-4 mb-4">
-          <p className="text-xs text-grisclarito mb-3">Añadir nueva clave</p>
-          <div className="flex gap-3 flex-wrap">
-            <input
-              type="text"
-              value={newEmail}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmail(e.target.value)}
-              required
-              placeholder="correo o clave (ej: alumna@gmail.com)"
-              className="flex-1 min-w-0 px-4 py-2 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors"
-            />
-            <input
-              type="text"
-              value={newLabel}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewLabel(e.target.value)}
-              placeholder="Etiqueta (opcional)"
-              className="w-40 px-4 py-2 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors"
-            />
+      {/* === URL del curso === */}
+      {courseUrl && (
+        <section>
+          <h2 className="text-xs uppercase tracking-widest text-marroncalido mb-4">URL del curso</h2>
+          <div className="bg-blanco shadow-sm px-5 py-4 flex items-center justify-between gap-4">
+            <p className="text-xs text-grisclarito font-mono truncate">{courseUrl}</p>
             <button
-              type="submit"
-              disabled={addingKey}
-              className="px-5 py-2 bg-marron text-blanco text-xs uppercase tracking-widest hover:bg-marroncalido transition-colors disabled:opacity-50 whitespace-nowrap"
+              onClick={() => copyToClipboard(courseUrl)}
+              className="text-xs text-grisclarito border border-grisoscuro px-3 py-1 hover:border-marron hover:text-marron transition-colors flex-shrink-0"
             >
-              {addingKey ? "Añadiendo..." : "+ Añadir"}
+              Copiar
             </button>
           </div>
-          {keyError && <p className="text-rojo text-xs mt-2">{keyError}</p>}
+          <p className="text-xs text-grisclarito mt-2">
+            Esta URL es la misma para todas las alumnas. Cada una entra con su correo.
+          </p>
+        </section>
+      )}
+
+      {/* === Correos con acceso === */}
+      <section>
+        <h2 className="text-xs uppercase tracking-widest text-marroncalido mb-5">
+          Correos con acceso ({keys.length})
+        </h2>
+        <form onSubmit={handleAddKey} className="flex gap-3 mb-4">
+          <input type="text" value={newEmail}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmail(e.target.value)}
+            required placeholder="alumna@correo.com"
+            className="flex-1 px-4 py-2 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors" />
+          <button type="submit" disabled={addingKey}
+            className="px-5 py-2 bg-marron text-blanco text-xs uppercase tracking-widest hover:bg-marroncalido transition-colors disabled:opacity-50 whitespace-nowrap">
+            {addingKey ? "Añadiendo..." : "+ Añadir"}
+          </button>
         </form>
-
-        <div className="space-y-2">
-          {keys.map((k: CourseKey) => {
-            const url = `${host}${buildCourseUrl(slug, k.token)}`;
-            const isEditing = editingToken === k.token;
-
-            return (
-              <div key={k.token} className="bg-blanco shadow-sm px-5 py-4">
-                {isEditing ? (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <input
-                      type="text"
-                      value={editingEmail}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingEmail(e.target.value)}
-                      autoFocus
-                      className="flex-1 min-w-0 px-3 py-1.5 border border-marron bg-vanilla text-sm focus:outline-none"
-                    />
-                    <button
-                      onClick={() => handleSaveKeyEdit(k.token)}
-                      className="text-xs text-blanco bg-marron px-3 py-1.5 hover:bg-marroncalido transition-colors"
-                    >
-                      Guardar
-                    </button>
-                    <button
-                      onClick={() => setEditingToken(null)}
-                      className="text-xs text-grisclarito border border-grisoscuro px-3 py-1.5 hover:border-marron hover:text-marron transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="text-sm text-marron font-medium truncate">
-                        {k.email}
-                        {k.label && (
-                          <span className="ml-2 text-xs text-grisclarito font-normal">
-                            {k.label}
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-grisclarito font-mono mt-0.5 truncate">
-                        {url}
-                      </p>
-                    </div>
-                    <div className="flex gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => { setEditingToken(k.token); setEditingEmail(k.email); }}
-                        className="text-xs text-grisclarito border border-grisoscuro px-3 py-1 hover:border-marron hover:text-marron transition-colors"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => copyToClipboard(url)}
-                        className="text-xs text-grisclarito border border-grisoscuro px-3 py-1 hover:border-marron hover:text-marron transition-colors"
-                      >
-                        Copiar URL
-                      </button>
-                      <button
-                        onClick={() => handleDeleteKey(k.token)}
-                        className="text-xs text-grisclarito border border-grisoscuro px-3 py-1 hover:border-rojo hover:text-rojo transition-colors"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
+        {keyError && <p className="text-rojo text-xs mb-3">{keyError}</p>}
+        <div className="space-y-1">
+          {keys.map((email) => (
+            <div key={email} className="bg-blanco shadow-sm px-5 py-3 flex items-center justify-between">
+              <span className="text-sm text-marron">{email}</span>
+              <button onClick={() => handleDeleteKey(email)}
+                className="text-xs text-grisclarito border border-grisoscuro px-3 py-1 hover:border-rojo hover:text-rojo transition-colors">
+                ×
+              </button>
+            </div>
+          ))}
           {keys.length === 0 && (
-            <p className="text-xs text-grisclarito text-center py-6">
-              Sin claves. Añade la primera arriba.
-            </p>
+            <p className="text-xs text-grisclarito text-center py-4">Sin correos. Añade el primero.</p>
           )}
         </div>
       </section>
 
+      {/* === Vídeos === */}
+      <VideoUploader
+        courseId={course.id}
+        slug={slugRef.current}
+        course={course}
+        videos={videos}
+        onVideosChange={handleVideosChange}
+      />
+
+      {/* === Galería === */}
+      <GalleryUploader
+        courseId={course.id}
+        initialFiles={course.gallery ?? []}
+      />
+
       {/* === Zona peligrosa === */}
       <section className="border-t border-grisoscuro pt-8">
-        <h2 className="text-xs uppercase tracking-widest text-grisclarito mb-4">
-          Zona peligrosa
-        </h2>
-
+        <h2 className="text-xs uppercase tracking-widest text-grisclarito mb-4">Zona peligrosa</h2>
         {!confirmDelete ? (
-          <button
-            onClick={() => setConfirmDelete(true)}
-            className="text-xs border border-grisoscuro text-grisclarito px-4 py-2 hover:border-rojo hover:text-rojo transition-colors"
-          >
+          <button onClick={() => setConfirmDelete(true)}
+            className="text-xs border border-grisoscuro text-grisclarito px-4 py-2 hover:border-rojo hover:text-rojo transition-colors">
             Eliminar este curso
           </button>
         ) : (
           <div className="bg-blanco shadow-sm px-5 py-4 border-l-2 border-rojo">
             <p className="text-sm text-marron mb-1">¿Seguro que quieres eliminar este curso?</p>
-            <p className="text-xs text-grisclarito mb-4">
-              Se eliminarán el curso y todas sus claves. Esta acción es irreversible.
-            </p>
+            <p className="text-xs text-grisclarito mb-4">Se elimina todo. Irreversible.</p>
             <div className="flex gap-3">
-              <button
-                onClick={handleDeleteCourse}
-                disabled={deleting}
-                className="text-xs bg-rojo text-blanco px-5 py-2 hover:opacity-80 transition-opacity disabled:opacity-50"
-              >
+              <button onClick={handleDeleteCourse} disabled={deleting}
+                className="text-xs bg-rojo text-blanco px-5 py-2 hover:opacity-80 transition-opacity disabled:opacity-50">
                 {deleting ? "Eliminando..." : "Sí, eliminar"}
               </button>
-              <button
-                onClick={() => setConfirmDelete(false)}
-                disabled={deleting}
-                className="text-xs border border-grisoscuro text-grisclarito px-5 py-2 hover:border-marron hover:text-marron transition-colors"
-              >
+              <button onClick={() => setConfirmDelete(false)} disabled={deleting}
+                className="text-xs border border-grisoscuro text-grisclarito px-5 py-2 hover:border-marron hover:text-marron transition-colors">
                 Cancelar
               </button>
             </div>
