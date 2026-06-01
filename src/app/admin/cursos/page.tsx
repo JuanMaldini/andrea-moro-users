@@ -101,16 +101,14 @@ export default async function CursosPage() {
                     </div>
                   </div>
 
-                  {/* Fila de acciones: Copiar · WhatsApp · Abrir · Publicar */}
+                  {/* Fila de acciones: Abrir · Copiar · WhatsApp · Publicar */}
                   {copyUrl && (
-                    <div className="px-3 md:px-4 py-2 bg-vanilla flex items-center gap-1 md:gap-2">
+                    <div className="px-2 py-2 bg-vanilla flex items-stretch gap-1">
                       <CopiarLink url={copyUrl} />
-                      <div className="ml-auto">
-                        <PublishButton
-                          courseId={course.id}
-                          published={course.json?.published !== false}
-                        />
-                      </div>
+                      <PublishButton
+                        courseId={course.id}
+                        published={course.json?.published !== false}
+                      />
                     </div>
                   )}
                 </Link>

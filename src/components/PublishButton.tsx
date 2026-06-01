@@ -40,7 +40,7 @@ export default function PublishButton({ courseId, published: initialPublished }:
       onClick={handleToggle}
       disabled={loading}
       title={published ? "Despublicar" : "Publicar"}
-      className="text-[9px] md:text-[10px] font-semibold border border-marron px-1 md:px-2 py-1 whitespace-nowrap flex-shrink-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-marron"
+      className="flex-1 min-w-0 text-center text-[10px] md:text-xs font-semibold border border-marron px-1 py-1 whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-marron"
     >
       {loading ? "…" : published ? "✓ Public." : "Public."}
     </button>
