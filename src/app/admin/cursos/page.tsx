@@ -101,9 +101,9 @@ export default async function CursosPage() {
                     </div>
                   </div>
 
-                  {/* Fila de acciones: Abrir · Copiar · WhatsApp · Publicar */}
+                  {/* Fila de acciones: Copiar · WhatsApp · Abrir · Publicar */}
                   {copyUrl && (
-                    <div className="px-3 md:px-4 py-2 bg-vanilla flex items-center gap-2 flex-wrap">
+                    <div className="px-3 md:px-4 py-2 bg-vanilla flex items-center gap-1 md:gap-2">
                       <CopiarLink url={copyUrl} />
                       <div className="ml-auto">
                         <PublishButton

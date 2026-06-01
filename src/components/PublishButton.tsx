@@ -40,10 +40,10 @@ export default function PublishButton({ courseId, published: initialPublished }:
       onClick={handleToggle}
       disabled={loading}
       title={published ? "Despublicar" : "Publicar"}
-      className={`text-xs font-semibold border px-3 py-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+      className={`text-[10px] md:text-xs font-semibold border border-marron px-2 md:px-3 py-1 whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
         published
-          ? "border-marron/30 text-marron/40 hover:border-marron hover:text-marron"
-          : "border-marron text-marron hover:bg-marron hover:text-blanco"
+          ? "text-marron/40 hover:border-marron hover:text-marron"
+          : "text-marron hover:bg-marron hover:text-blanco"
       }`}
     >
       {loading ? "…" : published ? "✓ Publicado" : "Publicar"}

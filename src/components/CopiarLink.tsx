@@ -6,7 +6,7 @@ interface Props {
   url: string;
 }
 
-const btn = "text-xs font-semibold border border-marron text-marron px-3 py-1 hover:bg-marron hover:text-blanco transition-colors";
+const btn = "text-[10px] md:text-xs font-semibold border border-marron text-marron px-2 md:px-3 py-1 hover:bg-marron hover:text-blanco transition-colors whitespace-nowrap";
 
 export default function CopiarLink({ url }: Props) {
   const [copied, setCopied] = useState(false);
