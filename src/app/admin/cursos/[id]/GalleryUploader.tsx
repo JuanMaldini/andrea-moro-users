@@ -72,9 +72,8 @@ export default function GalleryUploader({ courseId, course, gallery, onGalleryCh
         knownFiles.current = all;
         current = [...current, ...added];
         commit(current);
-      }
-      // Guarda el reparto en json.gallery
-      await persistGallery(current);
+        // Guarda tras cada foto: si hay error de red a mitad, las anteriores no se pierden.
+        await persistGallery(current);
       setProgress(100);
     } catch (err) {
       console.error("[GalleryUploader] fallo al subir fotos:", err);

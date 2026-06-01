@@ -8,14 +8,12 @@ export const metadata: Metadata = {
   description: "Plataforma de cursos de Andrea Moro",
 };
 
-// Bloquea el pinch-zoom del navegador en iOS.
-// user-scalable=no es ignorado en Safari desde iOS 10 en accesibilidad,
-// pero maximum-scale=1 sí funciona en la mayoría de casos.
+// El zoom involuntario en iOS al hacer focus en inputs se evita con
+// font-size ≥ 16px en los campos (ya es el caso con text-base / text-sm).
+// No bloqueamos el zoom del usuario — es necesario para accesibilidad.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

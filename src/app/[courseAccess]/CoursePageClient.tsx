@@ -51,6 +51,11 @@ export default function CoursePageClient({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Limpia el timer del lightbox si el componente se desmonta antes de que termine.
+  useEffect(() => {
+    return () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); };
+  }, []);
+
   async function handleAccessSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(""); setLoading(true);

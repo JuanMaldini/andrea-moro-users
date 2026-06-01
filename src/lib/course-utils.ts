@@ -54,6 +54,8 @@ export function parseCourseAccess(
 
   if (!/^[0-9a-f]{8}$/.test(token)) return null;
   if (!slug) return null;
+  // Solo letras minúsculas, números y guiones — evita inyecciones en filtros PocketBase.
+  if (!/^[a-z0-9-]+$/.test(slug)) return null;
 
   return { slug, token };
 }

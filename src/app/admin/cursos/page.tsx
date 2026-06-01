@@ -101,23 +101,16 @@ export default async function CursosPage() {
                     </div>
                   </div>
 
-                  {/* Sección de Slug */}
-                  {slug && (
-                    <div className="bg-grisclaro px-3 md:px-4 py-2 border-b-2 border-grisoscuro group-hover:bg-gris200 transition-colors flex items-center gap-2">
-                      <p className="text-xs text-marron font-mono font-semibold break-all flex-1 min-w-0">
-                        {copyUrl ? copyUrl.replace(host, "") : `/${slug}`}
-                      </p>
-                      <PublishButton
-                        courseId={course.id}
-                        published={course.json?.published !== false}
-                      />
-                    </div>
-                  )}
-
-                  {/* Sección de Botones */}
+                  {/* Fila de acciones: Abrir · Copiar · WhatsApp · Publicar */}
                   {copyUrl && (
-                    <div className="px-3 md:px-4 py-3 md:py-3 bg-vanilla">
+                    <div className="px-3 md:px-4 py-2 bg-vanilla flex items-center gap-2 flex-wrap">
                       <CopiarLink url={copyUrl} />
+                      <div className="ml-auto">
+                        <PublishButton
+                          courseId={course.id}
+                          published={course.json?.published !== false}
+                        />
+                      </div>
                     </div>
                   )}
                 </Link>

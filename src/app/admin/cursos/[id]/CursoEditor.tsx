@@ -74,11 +74,14 @@ export default function CursoEditor({ course, host }: Props) {
     setSaveStatus("saving");
     try {
       const pb = getPocketBase();
+      // Leer el JSON más reciente del servidor para no pisar videos/gallery
+      // que hayan sido guardados mientras se editaba título o descripción.
+      const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(course.id);
       await pb.collection(COLLECTION_DATA).update(course.id, {
         title: titleRef.current.trim(),
         description: descriptionRef.current,
         json: {
-          ...course.json,
+          ...latest.json,
           published: publishedRef.current,
           slug: slugRef.current,
           token: courseToken,
@@ -130,8 +133,9 @@ export default function CursoEditor({ course, host }: Props) {
     keysRef.current = updated;
     try {
       const pb = getPocketBase();
+      const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(course.id);
       await pb.collection(COLLECTION_DATA).update(course.id, {
-        json: { ...course.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current, gallery: galleryRef.current },
+        json: { ...latest.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current, gallery: galleryRef.current },
       });
       setKeys(updated);
       setNewEmail("");
@@ -147,8 +151,9 @@ export default function CursoEditor({ course, host }: Props) {
     keysRef.current = updated;
     try {
       const pb = getPocketBase();
+      const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(course.id);
       await pb.collection(COLLECTION_DATA).update(course.id, {
-        json: { ...course.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current, gallery: galleryRef.current },
+        json: { ...latest.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current, gallery: galleryRef.current },
       });
       setKeys(updated);
     } catch {

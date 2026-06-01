@@ -40,7 +40,7 @@ export default function NuevoCursoForm() {
           published: true,
           slug,
           token: courseToken,
-          keys: ["passamt"],
+          keys: [],
           videos: [],
         },
       });

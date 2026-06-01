@@ -2,7 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, COLLECTION_DATA } from "@/lib/pocketbase";
 import type { CourseRecord } from "@/lib/course-utils";
 
+// Rate limiter en memoria: máx 10 intentos por IP por minuto.
+// En Vercel cada instancia tiene su propio Map; suficiente para bloquear
+// ataques simples sin dependencias externas.
+const rl = new Map<string, { n: number; until: number }>();
+
+function limited(ip: string): boolean {
+  const now = Date.now();
+  const e = rl.get(ip);
+  if (!e || now > e.until) { rl.set(ip, { n: 1, until: now + 60_000 }); return false; }
+  if (e.n >= 10) return true;
+  e.n++;
+  return false;
+}
+
 export async function POST(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  if (limited(ip)) {
+    return NextResponse.json({ valid: false }, { status: 429 });
+  }
   try {
     const { courseId, token, email } = await request.json();
     if (!courseId || !token || !email) {
