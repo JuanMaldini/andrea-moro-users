@@ -56,7 +56,7 @@ export default function NuevoCursoForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div>
-        <label className="block text-xs font-medium uppercase tracking-widest text-marroncalido mb-2">
+        <label className="block text-sm font-bold uppercase tracking-widest text-marron mb-3">
           Título del curso
         </label>
         <input
@@ -64,35 +64,35 @@ export default function NuevoCursoForm() {
           value={title}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
           required
-          className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors"
+          className="w-full px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron focus:border-marron transition-all"
           placeholder="Técnica base de costura"
         />
         {slug && (
-          <p className="text-xs text-grisclarito mt-1 font-mono">
-            /{slug}_<span className="text-marroncalido">xxxxxxxx</span>
+          <p className="text-sm text-marron font-mono font-semibold mt-2">
+            /{slug}_<span className="text-grisclaro bg-marron px-1 rounded">xxxxxxxx</span>
           </p>
         )}
       </div>
 
       <div>
-        <label className="block text-xs font-medium uppercase tracking-widest text-marroncalido mb-2">
+        <label className="block text-sm font-bold uppercase tracking-widest text-marron mb-3">
           Descripción
         </label>
         <textarea
           value={description}
           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
-          rows={4}
-          className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors resize-none"
+          rows={5}
+          className="w-full px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron focus:border-marron transition-all resize-none"
           placeholder="Descripción del curso que verán las alumnas antes de entrar."
         />
       </div>
 
-      {error && <p className="text-rojo text-sm">{error}</p>}
+      {error && <p className="text-rojo text-base font-semibold bg-rojo/10 px-4 py-3 rounded border border-rojo">{error}</p>}
 
       <button
         type="submit"
         disabled={loading || !slug}
-        className="w-full py-3 bg-marron text-blanco text-xs font-medium uppercase tracking-widest hover:bg-marroncalido transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full py-3 bg-marron text-blanco text-base font-bold uppercase tracking-widest hover:bg-marroncalido transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? "Creando..." : "Crear curso"}
       </button>

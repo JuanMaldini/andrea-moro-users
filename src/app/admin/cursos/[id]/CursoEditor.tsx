@@ -198,32 +198,32 @@ export default function CursoEditor({ course, host }: Props) {
       {/* === Información === */}
       <section>
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-xs uppercase tracking-widest text-marroncalido">Información</h2>
-          {statusLabel && <span className="text-xs text-grisclarito">{statusLabel}</span>}
+          <h2 className="text-sm font-bold uppercase tracking-widest text-marron">Información</h2>
+          {statusLabel && <span className="text-sm font-semibold text-marron">{statusLabel}</span>}
         </div>
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div>
-            <label className="block text-xs uppercase tracking-widest text-grisclarito mb-2">Título</label>
+            <label className="block text-sm font-bold uppercase tracking-widest text-marron mb-3">Título</label>
             <input type="text" value={title}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleTitleChange(e.target.value)}
-              className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors" />
+              className="w-full px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all" />
             {slug && (
-              <p className="text-xs text-grisclarito mt-1 font-mono">
-                /{slug}_<span className="text-marroncalido">xxxxxxxx</span>
+              <p className="text-sm text-marron font-mono font-semibold mt-2">
+                /{slug}_<span className="text-grisclaro bg-marron px-1 rounded">xxxxxxxx</span>
               </p>
             )}
           </div>
           <div>
-            <label className="block text-xs uppercase tracking-widest text-grisclarito mb-2">Descripción</label>
-            <textarea value={description} rows={3}
+            <label className="block text-sm font-bold uppercase tracking-widest text-marron mb-3">Descripción</label>
+            <textarea value={description} rows={4}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleDescriptionChange(e.target.value)}
-              className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors resize-none" />
+              className="w-full px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all resize-none" />
           </div>
           <div className="flex items-center gap-3">
             <input id="published" type="checkbox" checked={published}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePublishedChange(e.target.checked)}
-              className="w-4 h-4 accent-marron" />
-            <label htmlFor="published" className="text-xs text-marroncalido">Publicado</label>
+              className="w-5 h-5 accent-marron cursor-pointer" />
+            <label htmlFor="published" className="text-sm font-semibold text-marron cursor-pointer">Publicado</label>
           </div>
         </div>
       </section>
@@ -231,17 +231,17 @@ export default function CursoEditor({ course, host }: Props) {
       {/* === URL del curso === */}
       {courseUrl && (
         <section>
-          <h2 className="text-xs uppercase tracking-widest text-marroncalido mb-4">URL del curso</h2>
-          <div className="bg-blanco shadow-sm px-5 py-4 flex items-center justify-between gap-4">
-            <p className="text-xs text-grisclarito font-mono truncate">{courseUrl}</p>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-marron mb-4">URL del curso</h2>
+          <div className="bg-grisclaro border-2 border-marron px-5 py-4 flex items-center justify-between gap-4 rounded">
+            <p className="text-sm text-marron font-mono font-semibold truncate">{courseUrl}</p>
             <button
               onClick={() => copyToClipboard(courseUrl)}
-              className="text-xs text-grisclarito border border-grisoscuro px-3 py-1 hover:border-marron hover:text-marron transition-colors flex-shrink-0"
+              className="text-xs font-semibold text-blanco bg-marron border-2 border-marron px-4 py-2 hover:bg-marroncalido hover:border-marroncalido transition-all flex-shrink-0 rounded"
             >
               Copiar
             </button>
           </div>
-          <p className="text-xs text-grisclarito mt-2">
+          <p className="text-sm text-marron font-semibold mt-3">
             Esta URL es la misma para todas las alumnas. Cada una entra con su correo.
           </p>
         </section>
@@ -249,32 +249,32 @@ export default function CursoEditor({ course, host }: Props) {
 
       {/* === Correos con acceso === */}
       <section>
-        <h2 className="text-xs uppercase tracking-widest text-marroncalido mb-5">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-marron mb-5">
           Correos con acceso ({keys.length})
         </h2>
         <form onSubmit={handleAddKey} className="flex gap-3 mb-4">
           <input type="text" value={newEmail}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmail(e.target.value)}
             required placeholder="alumna@correo.com"
-            className="flex-1 px-4 py-2 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors" />
+            className="flex-1 px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all rounded" />
           <button type="submit" disabled={addingKey}
-            className="px-5 py-2 bg-marron text-blanco text-xs uppercase tracking-widest hover:bg-marroncalido transition-colors disabled:opacity-50 whitespace-nowrap">
+            className="px-6 py-3 bg-marron text-blanco text-xs font-bold uppercase tracking-widest hover:bg-marroncalido transition-all disabled:opacity-50 whitespace-nowrap rounded">
             {addingKey ? "Añadiendo..." : "+ Añadir"}
           </button>
         </form>
-        {keyError && <p className="text-rojo text-xs mb-3">{keyError}</p>}
-        <div className="space-y-1">
+        {keyError && <p className="text-rojo text-sm font-semibold mb-3 bg-rojo/10 px-3 py-2 rounded border border-rojo">{keyError}</p>}
+        <div className="space-y-2">
           {keys.map((email) => (
-            <div key={email} className="bg-blanco shadow-sm px-5 py-3 flex items-center justify-between">
-              <span className="text-sm text-marron">{email}</span>
+            <div key={email} className="bg-grisclaro border-2 border-marron px-5 py-3 flex items-center justify-between rounded">
+              <span className="text-sm font-semibold text-marron">{email}</span>
               <button onClick={() => handleDeleteKey(email)}
-                className="text-xs text-grisclarito border border-grisoscuro px-3 py-1 hover:border-rojo hover:text-rojo transition-colors">
-                ×
+                className="text-xs font-bold text-blanco bg-rojo px-3 py-1 hover:opacity-80 transition-opacity rounded">
+                ✕
               </button>
             </div>
           ))}
           {keys.length === 0 && (
-            <p className="text-xs text-grisclarito text-center py-4">Sin correos. Añade el primero.</p>
+            <p className="text-sm text-marron text-center py-6 bg-grisclaro rounded border-2 border-grisoscuro">Sin correos. Añade el primero.</p>
           )}
         </div>
       </section>
@@ -297,24 +297,24 @@ export default function CursoEditor({ course, host }: Props) {
       />
 
       {/* === Zona peligrosa === */}
-      <section className="border-t border-grisoscuro pt-8">
-        <h2 className="text-xs uppercase tracking-widest text-grisclarito mb-4">Zona peligrosa</h2>
+      <section className="border-t-2 border-grisoscuro pt-10">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-rojo mb-5">Zona peligrosa</h2>
         {!confirmDelete ? (
           <button onClick={() => setConfirmDelete(true)}
-            className="text-xs border border-grisoscuro text-grisclarito px-4 py-2 hover:border-rojo hover:text-rojo transition-colors">
+            className="text-xs font-bold border-2 border-rojo text-rojo px-6 py-3 hover:bg-rojo hover:text-blanco transition-all rounded">
             Eliminar este curso
           </button>
         ) : (
-          <div className="bg-blanco shadow-sm px-5 py-4 border-l-2 border-rojo">
-            <p className="text-sm text-marron mb-1">¿Seguro que quieres eliminar este curso?</p>
-            <p className="text-xs text-grisclarito mb-4">Se elimina todo. Irreversible.</p>
+          <div className="bg-rojo/10 border-2 border-rojo px-6 py-5 rounded">
+            <p className="text-base font-bold text-marron mb-2">¿Seguro que quieres eliminar este curso?</p>
+            <p className="text-sm text-marron mb-5 font-semibold">Se elimina todo. Irreversible.</p>
             <div className="flex gap-3">
               <button onClick={handleDeleteCourse} disabled={deleting}
-                className="text-xs bg-rojo text-blanco px-5 py-2 hover:opacity-80 transition-opacity disabled:opacity-50">
+                className="text-xs font-bold bg-rojo text-blanco px-6 py-2 hover:opacity-80 transition-opacity disabled:opacity-50 rounded">
                 {deleting ? "Eliminando..." : "Sí, eliminar"}
               </button>
               <button onClick={() => setConfirmDelete(false)} disabled={deleting}
-                className="text-xs border border-grisoscuro text-grisclarito px-5 py-2 hover:border-marron hover:text-marron transition-colors">
+                className="text-xs font-bold border-2 border-marron text-marron px-6 py-2 hover:bg-marron hover:text-blanco transition-all rounded">
                 Cancelar
               </button>
             </div>

@@ -30,11 +30,11 @@ export default function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-6">
       <div>
         <label
           htmlFor="email"
-          className="block text-xs font-medium uppercase tracking-widest text-marroncalido mb-2"
+          className="block text-sm font-bold uppercase tracking-widest text-marron mb-3"
         >
           Email
         </label>
@@ -45,7 +45,7 @@ export default function LoginForm() {
           onChange={(e) => setEmail(e.target.value)}
           required
           autoComplete="email"
-          className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors"
+          className="w-full px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all rounded"
           placeholder="tu@email.com"
         />
       </div>
@@ -53,7 +53,7 @@ export default function LoginForm() {
       <div>
         <label
           htmlFor="password"
-          className="block text-xs font-medium uppercase tracking-widest text-marroncalido mb-2"
+          className="block text-sm font-bold uppercase tracking-widest text-marron mb-3"
         >
           Contraseña
         </label>
@@ -64,17 +64,17 @@ export default function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           autoComplete="current-password"
-          className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors"
+          className="w-full px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all rounded"
           placeholder="••••••••"
         />
       </div>
 
-      {error && <p className="text-rojo text-sm">{error}</p>}
+      {error && <p className="text-rojo text-base font-semibold bg-rojo/10 px-4 py-3 rounded border border-rojo">{error}</p>}
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-3 bg-marron text-blanco text-xs font-medium uppercase tracking-widest hover:bg-marroncalido transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+        className="w-full py-3 bg-marron text-blanco text-base font-bold uppercase tracking-widest hover:bg-marroncalido transition-all hover:shadow-lg disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed rounded"
       >
         {loading ? "Entrando..." : "Entrar"}
       </button>

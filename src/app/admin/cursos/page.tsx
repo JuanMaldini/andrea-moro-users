@@ -33,7 +33,7 @@ export default async function CursosPage() {
           <div className="flex items-center gap-4">
             <Link
               href="/admin/cursos/nuevo"
-              className="text-xs border border-marron text-marron px-4 py-1.5 hover:bg-marron hover:text-blanco transition-colors"
+              className="text-xs font-bold border-2 border-marron text-marron px-4 py-2 hover:bg-marron hover:text-blanco transition-all rounded"
             >
               + Nuevo curso
             </Link>
@@ -42,70 +42,80 @@ export default async function CursosPage() {
         </div>
       </nav>
 
-      <div className="max-w-4xl mx-auto px-6 py-10">
+      <div className="w-full px-4 py-6 md:px-6 md:py-10">
         {courses.length === 0 ? (
           <div className="text-center py-20">
-            <p className="text-grisclarito text-sm mb-4">Aún no hay cursos.</p>
-            <Link href="/admin/cursos/nuevo" className="text-xs text-marron hover:underline">
+            <p className="text-marron text-xl font-bold mb-6">Aún no hay cursos.</p>
+            <Link href="/admin/cursos/nuevo" className="text-lg text-marron hover:text-marroncalido font-bold transition-colors">
               Crear el primer curso →
             </Link>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-6">
             {courses.map((course) => {
               const keys = course.json?.keys ?? [];
               const videos = course.json?.videos ?? [];
               const slug = course.json?.slug ?? "";
-              // Preferimos la clave passamt para el link de copia; si no, la primera
               const courseToken = course.json?.token;
               const copyUrl = slug && courseToken
                 ? `${host}${buildCourseUrl(slug, courseToken)}`
                 : null;
 
               return (
-                <div
+                <Link
                   key={course.id}
-                  className="relative bg-blanco shadow-sm flex items-center outline outline-1 outline-transparent hover:outline-marron transition-[outline-color]"
+                  href={`/admin/cursos/${course.id}`}
+                  className="block bg-blanco border-2 border-marron rounded-lg overflow-hidden hover:shadow-xl transition-all hover:border-marroncalido group"
                 >
-                  {/* Link estirado: cubre toda la tarjeta salvo los botones */}
-                  <Link
-                    href={`/admin/cursos/${course.id}`}
-                    aria-label={`Editar ${course.title || "curso"}`}
-                    className="absolute inset-0 z-0"
-                  />
-
-                  {/* Contenido (no captura clics → pasan al Link de abajo) */}
-                  <div className="flex-1 min-w-0 px-6 py-4 pointer-events-none">
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="text-sm text-marron font-medium truncate">
-                          {course.title || "Sin título"}
-                          {course.json?.published === false && (
-                            <span className="ml-2 text-xs text-grisclarito font-normal">
-                              (no publicado)
-                            </span>
-                          )}
-                        </p>
-                        {slug && (
-                          <p className="text-xs text-grisclarito mt-0.5 font-mono">
-                            /{slug}_…
-                          </p>
+                  {/* Sección de Título, Claves y Vídeos en un row */}
+                  <div className="bg-marron px-3 md:px-4 py-3 md:py-3 flex items-center justify-between gap-3 border-b-2 border-grisoscuro group-hover:bg-marroncalido transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm md:text-base font-bold text-blanco break-words">
+                        {course.title || "Sin título"}
+                        {course.json?.published === false && (
+                          <span className="ml-1 text-xs text-blanco/80 font-normal">
+                            (no publicado)
+                          </span>
                         )}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4 md:gap-5 flex-shrink-0">
+                      <div className="flex items-center gap-1">
+                        <p className="text-sm md:text-base font-bold text-blanco">
+                          {keys.length}
+                        </p>
+                        <p className="text-xs md:text-sm text-blanco/90 font-medium">
+                          {keys.length === 1 ? "clave" : "cl."}
+                        </p>
                       </div>
-                      <div className="text-right text-xs text-grisclarito flex-shrink-0">
-                        <p>{keys.length} clave{keys.length !== 1 ? "s" : ""}</p>
-                        <p>{videos.length} vídeo{videos.length !== 1 ? "s" : ""}</p>
+                      <div className="w-px h-4 bg-blanco/30"></div>
+                      <div className="flex items-center gap-1">
+                        <p className="text-sm md:text-base font-bold text-blanco">
+                          {videos.length}
+                        </p>
+                        <p className="text-xs md:text-sm text-blanco/90 font-medium">
+                          {videos.length === 1 ? "vid." : "vid."}
+                        </p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Botones — por encima del Link, clic independiente */}
+                  {/* Sección de Slug */}
+                  {slug && (
+                    <div className="bg-grisclaro px-3 md:px-4 py-2 md:py-2 border-b-2 border-grisoscuro group-hover:bg-gris200 transition-colors">
+                      <p className="text-xs md:text-sm text-marron font-mono font-semibold break-all">
+                        /{slug}_
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Sección de Botones */}
                   {copyUrl && (
-                    <div className="relative z-10 px-4">
+                    <div className="px-3 md:px-4 py-3 md:py-3 bg-vanilla">
                       <CopiarLink url={copyUrl} />
                     </div>
                   )}
-                </div>
+                </Link>
               );
             })}
           </div>
