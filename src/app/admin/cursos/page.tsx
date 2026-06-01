@@ -7,7 +7,7 @@ import CopiarLink from "@/components/CopiarLink";
 
 export default async function CursosPage() {
   const pb = await createServerClient();
-  if (!pb.authStore.isValid || !pb.authStore.model?.admin) redirect("/admin");
+  if (!pb.authStore.isValid) redirect("/admin");
 
   const host =
     (process.env["NEXT_PUBLIC_SITE_URL"] as string | undefined) ??

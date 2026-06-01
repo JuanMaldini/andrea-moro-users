@@ -2,51 +2,41 @@ import { NextRequest, NextResponse } from "next/server";
 
 interface PbCookiePayload {
   token?: string;
-  // PocketBase 0.21 exporta el usuario en la clave `model` (no `record`).
-  model?: Record<string, unknown>;
 }
 
-interface AuthState {
-  authenticated: boolean;
-  admin: boolean;
-}
-
-function readAuth(rawValue: string): AuthState {
+function isAuthenticated(rawValue: string): boolean {
   try {
     const parsed: PbCookiePayload = JSON.parse(decodeURIComponent(rawValue));
-    if (!parsed.token) return { authenticated: false, admin: false };
+    if (!parsed.token) return false;
 
     const [, b64] = parsed.token.split(".");
     const padded = b64 + "==".slice(0, (4 - (b64.length % 4)) % 4);
     const payload = JSON.parse(atob(padded));
 
-    const valid =
-      typeof payload.exp === "number" && payload.exp > Date.now() / 1000;
-    const admin = parsed.model?.admin === true;
-    return { authenticated: valid, admin: valid && admin };
+    return typeof payload.exp === "number" && payload.exp > Date.now() / 1000;
   } catch {
-    return { authenticated: false, admin: false };
+    return false;
   }
 }
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const authCookie = request.cookies.get("pb_auth");
-  const { admin } = authCookie?.value
-    ? readAuth(authCookie.value)
-    : { admin: false };
+  const authenticated = authCookie?.value
+    ? isAuthenticated(authCookie.value)
+    : false;
 
-  // /admin (login) es público — si ya eres admin, redirige al panel
+  // /admin (login) es público — si ya estás autenticado, redirige al panel
   if (pathname === "/admin") {
-    if (admin) {
+    if (authenticated) {
       return NextResponse.redirect(new URL("/admin/cursos", request.url));
     }
     return NextResponse.next();
   }
 
-  // /admin/cursos y subrutas requieren ser ADMIN (no basta con estar logueado)
+  // /admin/cursos y subrutas requieren sesión válida
   if (pathname.startsWith("/admin/")) {
-    if (!admin) {
+    if (!authenticated) {
       return NextResponse.redirect(new URL("/admin", request.url));
     }
     return NextResponse.next();
