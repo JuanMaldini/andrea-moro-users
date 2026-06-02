@@ -3,14 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import type { CourseVideo } from "@/lib/course-utils";
 
-// Formatea segundos como M:SS
-function formatDur(s: number): string {
-  if (!isFinite(s) || s <= 0) return "";
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, "0")}`;
-}
-
 type State = "presentation" | "access" | "videos";
 
 interface Props {
@@ -19,7 +11,6 @@ interface Props {
   title: string;
   description: string;
   videos: CourseVideo[];
-  fileIds: string[];
   pbUrl: string;
   collectionName: string;
   published: boolean;
@@ -39,8 +30,6 @@ export default function CoursePageClient({
   const [loading, setLoading] = useState(false);
   const [modalVideo, setModalVideo] = useState<CourseVideo | null>(null);
   const [modalVideoError, setModalVideoError] = useState<string | null>(null);
-  // Duraciones de vídeos de la lista (filename → segundos), cargadas vía onLoadedMetadata
-  const [listDurations, setListDurations] = useState<Record<string, number>>({});
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -199,50 +188,22 @@ export default function CoursePageClient({
             </h2>
 
             <div className="bg-blanco shadow-sm divide-y divide-grisoscuro">
-              {videos.map((video, idx) => {
-                const dur = listDurations[video.file];
-                return (
-                  <button
-                    key={video.file}
-                    onClick={() => { setModalVideoError(null); setModalVideo(video); }}
-                    className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-vanilla transition-colors"
-                  >
-                    {/* Miniatura del vídeo con número superpuesto */}
-                    <div className="relative flex-shrink-0 w-20 h-12 bg-grisoscuro overflow-hidden rounded-sm">
-                      <video
-                        src={fileUrl(video.file)}
-                        className="w-full h-full object-cover"
-                        preload="metadata"
-                        playsInline
-                        muted
-                        onLoadedMetadata={(e) => {
-                          const d = e.currentTarget.duration;
-                          if (isFinite(d) && d > 0) {
-                            setListDurations((prev) => ({ ...prev, [video.file]: d }));
-                          }
-                        }}
-                      />
-                      {/* Overlay play */}
-                      <div className="absolute inset-0 flex items-center justify-center bg-negro/20 hover:bg-negro/40 transition-colors">
-                        <span className="text-blanco text-[10px]">▶</span>
-                      </div>
-                      {/* Número de lección */}
-                      <span className="absolute top-0.5 left-1 text-blanco text-[9px] font-bold drop-shadow-sm">
-                        {idx + 1}
-                      </span>
-                      {/* Duración */}
-                      {dur && (
-                        <span className="absolute bottom-0.5 right-1 text-blanco text-[9px] font-mono drop-shadow-sm">
-                          {formatDur(dur)}
-                        </span>
-                      )}
-                    </div>
+              {videos.map((video, idx) => (
+                <button
+                  key={video.file}
+                  onClick={() => { setModalVideoError(null); setModalVideo(video); }}
+                  className="w-full text-left px-4 py-3 flex items-center gap-4 hover:bg-vanilla transition-colors"
+                >
+                  {/* Número */}
+                  <span className="text-xs w-5 text-right flex-shrink-0 text-grisclarito">{idx + 1}</span>
 
-                    {/* Nombre */}
-                    <span className="flex-1 text-sm text-marroncalido text-left leading-snug">{video.name}</span>
-                  </button>
-                );
-              })}
+                  {/* Nombre */}
+                  <span className="flex-1 text-sm text-marroncalido text-left leading-snug">{video.name}</span>
+
+                  {/* Icono play */}
+                  <span className="text-xs text-grisclarito flex-shrink-0">▶</span>
+                </button>
+              ))}
               {videos.length === 0 && (
                 <p className="px-6 py-8 text-xs text-grisclarito text-center">Vídeos en preparación.</p>
               )}

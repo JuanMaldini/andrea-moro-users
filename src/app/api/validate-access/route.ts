@@ -6,9 +6,18 @@ import type { CourseRecord } from "@/lib/course-utils";
 // En Vercel cada instancia tiene su propio Map; suficiente para bloquear
 // ataques simples sin dependencias externas.
 const rl = new Map<string, { n: number; until: number }>();
+const RL_MAX = 5_000; // máximo de entradas antes de purgar las expiradas
 
 function limited(ip: string): boolean {
   const now = Date.now();
+
+  // Purga entradas expiradas cuando el Map crece demasiado
+  if (rl.size >= RL_MAX) {
+    for (const [key, val] of rl) {
+      if (now > val.until) rl.delete(key);
+    }
+  }
+
   const e = rl.get(ip);
   if (!e || now > e.until) { rl.set(ip, { n: 1, until: now + 60_000 }); return false; }
   if (e.n >= 10) return true;

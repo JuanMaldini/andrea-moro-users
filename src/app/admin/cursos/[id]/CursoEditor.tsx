@@ -15,7 +15,6 @@ import GalleryUploader from "./GalleryUploader";
 interface Props {
   course: CourseRecord;
   host: string;
-  collectionName: string;
 }
 
 function slugify(text: string): string {
@@ -288,7 +287,6 @@ export default function CursoEditor({ course, host }: Props) {
       <VideoUploader
         courseId={course.id}
         slug={slugRef.current}
-        course={course}
         videos={videos}
         onVideosChange={handleVideosChange}
       />

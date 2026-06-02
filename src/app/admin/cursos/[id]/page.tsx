@@ -56,7 +56,7 @@ export default async function CursoDetailPage({ params }: Props) {
       </nav>
 
       <div className="max-w-4xl mx-auto px-4 md:px-6 py-10">
-        <CursoEditor course={course} host={host} collectionName={COLLECTION_DATA} />
+        <CursoEditor course={course} host={host} />
       </div>
     </main>
   );

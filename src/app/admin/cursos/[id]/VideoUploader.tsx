@@ -16,7 +16,6 @@ interface UploadItem {
 interface Props {
   courseId: string;
   slug: string;
-  course: CourseRecord;
   videos: CourseVideo[];
   onVideosChange: (videos: CourseVideo[]) => void;
 }
@@ -50,7 +49,7 @@ function displayName(slug: string, order: number): string {
 
 // ─── Componente ──────────────────────────────────────────────────────────────
 
-export default function VideoUploader({ courseId, slug, course, videos, onVideosChange }: Props) {
+export default function VideoUploader({ courseId, slug, videos, onVideosChange }: Props) {
   const [localVideos, setLocalVideos] = useState<CourseVideo[]>(videos);
   const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
   const [uploading, setUploading] = useState(false);

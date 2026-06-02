@@ -77,7 +77,6 @@ export default function GalleryUploader({ courseId, course, gallery, onGalleryCh
       }
       setProgress(100);
     } catch (err) {
-      console.error("[GalleryUploader] fallo al subir fotos:", err);
       setError(err instanceof Error ? err.message : "Error al subir las fotos.");
     } finally {
       setUploading(false);
@@ -95,8 +94,7 @@ export default function GalleryUploader({ courseId, course, gallery, onGalleryCh
       const pb = getPocketBase();
       await pb.collection(COLLECTION_DATA).update(courseId, { "files-": [filename] });
       await persistGallery(updated);
-    } catch (err) {
-      console.error("[GalleryUploader] fallo al eliminar foto:", err);
+    } catch {
       // Revierte si la red falló.
       knownFiles.current = [...knownFiles.current, filename];
       commit(prev);

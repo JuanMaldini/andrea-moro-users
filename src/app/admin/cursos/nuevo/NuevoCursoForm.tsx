@@ -45,9 +45,8 @@ export default function NuevoCursoForm() {
         },
       });
       router.push(`/admin/cursos/${record.id}`);
-    } catch (err) {
+    } catch {
       setError("Error al crear el curso. Comprueba la conexión con PocketBase.");
-      console.error(err);
     } finally {
       setLoading(false);
     }

@@ -27,8 +27,7 @@ export default function PublishButton({ courseId, published: initialPublished }:
       await pb.collection(COLLECTION_DATA).update(courseId, { json: updatedJson });
       setPublished(next);
       router.refresh();
-    } catch (err) {
-      console.error("[PublishButton]", err);
+    } catch {
       alert("Error al actualizar. Recarga e inténtalo de nuevo.");
     } finally {
       setLoading(false);

@@ -41,7 +41,6 @@ export default async function CourseAccessPage({ params }: Props) {
       title={course.title}
       description={course.description}
       videos={videos}
-      fileIds={course.files}
       pbUrl={getPbUrl()}
       collectionName={COLLECTION_DATA}
       published={course.json?.published ?? false}
