@@ -114,6 +114,7 @@ export default function CoursePageClient({
                   src={fileUrl(gallery[0])}
                   alt=""
                   draggable={false}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                   className="absolute inset-0 w-full h-full object-cover object-center select-none"
                 />
               )}
