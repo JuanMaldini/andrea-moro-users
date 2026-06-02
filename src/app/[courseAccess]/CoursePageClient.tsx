@@ -3,6 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import type { CourseVideo } from "@/lib/course-utils";
 
+// Formatea segundos como M:SS
+function formatDur(s: number): string {
+  if (!isFinite(s) || s <= 0) return "";
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
 type State = "presentation" | "access" | "videos";
 
 interface Props {
@@ -30,6 +38,9 @@ export default function CoursePageClient({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [modalVideo, setModalVideo] = useState<CourseVideo | null>(null);
+  const [modalVideoError, setModalVideoError] = useState<string | null>(null);
+  // Duraciones de vídeos de la lista (filename → segundos), cargadas vía onLoadedMetadata
+  const [listDurations, setListDurations] = useState<Record<string, number>>({});
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -188,14 +199,50 @@ export default function CoursePageClient({
             </h2>
 
             <div className="bg-blanco shadow-sm divide-y divide-grisoscuro">
-              {videos.map((video, idx) => (
-                <button key={video.file} onClick={() => setModalVideo(video)}
-                  className="w-full text-left px-6 py-4 flex items-center gap-4 hover:bg-vanilla transition-colors">
-                  <span className="text-xs w-5 text-right flex-shrink-0 text-grisclarito">{idx + 1}</span>
-                  <span className="text-sm text-marroncalido">{video.name}</span>
-                  <span className="ml-auto text-xs text-grisclarito">▶</span>
-                </button>
-              ))}
+              {videos.map((video, idx) => {
+                const dur = listDurations[video.file];
+                return (
+                  <button
+                    key={video.file}
+                    onClick={() => { setModalVideoError(null); setModalVideo(video); }}
+                    className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-vanilla transition-colors"
+                  >
+                    {/* Miniatura del vídeo con número superpuesto */}
+                    <div className="relative flex-shrink-0 w-20 h-12 bg-grisoscuro overflow-hidden rounded-sm">
+                      <video
+                        src={fileUrl(video.file)}
+                        className="w-full h-full object-cover"
+                        preload="metadata"
+                        playsInline
+                        muted
+                        onLoadedMetadata={(e) => {
+                          const d = e.currentTarget.duration;
+                          if (isFinite(d) && d > 0) {
+                            setListDurations((prev) => ({ ...prev, [video.file]: d }));
+                          }
+                        }}
+                      />
+                      {/* Overlay play */}
+                      <div className="absolute inset-0 flex items-center justify-center bg-negro/20 hover:bg-negro/40 transition-colors">
+                        <span className="text-blanco text-[10px]">▶</span>
+                      </div>
+                      {/* Número de lección */}
+                      <span className="absolute top-0.5 left-1 text-blanco text-[9px] font-bold drop-shadow-sm">
+                        {idx + 1}
+                      </span>
+                      {/* Duración */}
+                      {dur && (
+                        <span className="absolute bottom-0.5 right-1 text-blanco text-[9px] font-mono drop-shadow-sm">
+                          {formatDur(dur)}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Nombre */}
+                    <span className="flex-1 text-sm text-marroncalido text-left leading-snug">{video.name}</span>
+                  </button>
+                );
+              })}
               {videos.length === 0 && (
                 <p className="px-6 py-8 text-xs text-grisclarito text-center">Vídeos en preparación.</p>
               )}
@@ -268,25 +315,51 @@ export default function CoursePageClient({
       {/* Modal de vídeo */}
       {modalVideo && (
         <div
-          className="fixed inset-0 z-50 bg-negro bg-opacity-90 flex items-center justify-center px-4"
+          className="fixed inset-0 z-50 bg-negro bg-opacity-90 flex items-center justify-center px-4 py-8"
           onClick={() => setModalVideo(null)}
         >
           <div className="w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
+            {/* Cabecera modal */}
             <div className="flex items-center justify-between mb-3">
-              <p className="text-xs text-grisoscuro uppercase tracking-widest">{modalVideo.name}</p>
-              <button onClick={() => setModalVideo(null)}
-                className="text-grisoscuro hover:text-blanco text-lg transition-colors">
+              <p className="text-xs text-grisoscuro uppercase tracking-widest truncate flex-1 mr-4">
+                {modalVideo.name}
+              </p>
+              <button
+                onClick={() => setModalVideo(null)}
+                className="text-grisoscuro hover:text-blanco text-xl leading-none transition-colors flex-shrink-0"
+                aria-label="Cerrar"
+              >
                 ×
               </button>
             </div>
+
+            {/* Reproductor */}
             <video
               key={fileUrl(modalVideo.file)}
               src={fileUrl(modalVideo.file)}
-              controls autoPlay
-              className="w-full aspect-video bg-negro"
-            >
-              Tu navegador no soporta vídeo HTML5.
-            </video>
+              controls
+              autoPlay
+              playsInline
+              className="w-full aspect-video bg-negro block"
+              onError={(e) => {
+                const err = (e.currentTarget as HTMLVideoElement).error;
+                const msgs: Record<number, string> = {
+                  2: "Error de red al cargar el vídeo. Comprueba tu conexión.",
+                  3: "El navegador no puede decodificar este vídeo. Puede que esté en formato H.265/HEVC (iPhone). Prueba con Safari o convierte el vídeo.",
+                  4: "Este vídeo no está disponible o el formato no es soportado por tu navegador.",
+                };
+                const code = err?.code ?? 0;
+                setModalVideoError(msgs[code] ?? "No se pudo reproducir el vídeo.");
+              }}
+              onPlay={() => setModalVideoError(null)}
+            />
+
+            {/* Mensaje de error de reproducción */}
+            {modalVideoError && (
+              <div className="mt-3 px-4 py-3 bg-rojo/10 border border-rojo/40 text-rojo text-xs leading-relaxed rounded">
+                ⚠ {modalVideoError}
+              </div>
+            )}
           </div>
         </div>
       )}

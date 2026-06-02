@@ -18,10 +18,7 @@ export const log = {
     const msg = data !== undefined ? `${label}: ${fmt(data)}` : label;
     console.warn(`[warn] ${msg}`);
   },
-  info(label: string, data?: unknown) {
-    if (process.env.NODE_ENV !== "production") {
-      const msg = data !== undefined ? `${label}: ${fmt(data)}` : label;
-      console.log(`[info] ${msg}`);
-    }
+  info(_label: string, _data?: unknown) {
+    // suprimido en producción y desarrollo
   },
 };

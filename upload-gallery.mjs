@@ -15,7 +15,7 @@ import { fileURLToPath } from "url";
 // ── Configuración ────────────────────────────────────────────────────────────
 
 const PB_URL        = "https://pocketbase.vmoliver.cloud";
-const TOKEN         = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjb2xsZWN0aW9uSWQiOiJwYmNfMzE0MjYzNTgyMyIsImV4cCI6MTc3NTM1MzQyNiwiaWQiOiI1ejhnM204OTZwM3gydWMiLCJyZWZyZXNoYWJsZSI6ZmFsc2UsInR5cGUiOiJhdXRoIn0.KCYeMI3yAqkjP3wUvmr4OFIdKYJWez6U-5J6UWl_Y0A";
+const TOKEN         = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjb2xsZWN0aW9uSWQiOiJwYmNfMzE0MjYzNTgyMyIsImV4cCI6MTc3NjE4NTI5MSwiaWQiOiJycXVwb2tnMWVyNTZ0MjUiLCJyZWZyZXNoYWJsZSI6ZmFsc2UsInR5cGUiOiJhdXRoIn0.dTtVoaOC8UGipqj1bkDfOv1Q2slKSNFGj8H96PczzUQ";
 const COLLECTION    = "andreamoro_data";
 
 // Ruta a las imágenes del repo andrea-moro (hermano de este directorio)
