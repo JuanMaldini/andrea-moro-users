@@ -111,3 +111,17 @@ export default async function CursosPage() {
                       <PublishButton
                         courseId={course.id}
                         published={course.json?.published !== false}
+                      />
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <SiteGalleryManager />
+    </main>
+  );
+}
