@@ -330,21 +330,4 @@ export default function CursoEditor({ course, host }: Props) {
           </button>
         ) : (
           <div className="bg-rojo/10 border-2 border-rojo px-6 py-5 rounded">
-            <p className="text-base font-bold text-marron mb-2">¿Seguro que quieres eliminar este curso?</p>
-            <p className="text-sm text-marron mb-5 font-semibold">Se elimina todo. Irreversible.</p>
-            <div className="flex gap-3">
-              <button onClick={handleDeleteCourse} disabled={deleting}
-                className="text-xs font-bold bg-rojo text-blanco px-6 py-2 hover:opacity-80 transition-opacity disabled:opacity-50 rounded">
-                {deleting ? "Eliminando..." : "Sí, eliminar"}
-              </button>
-              <button onClick={() => setConfirmDelete(false)} disabled={deleting}
-                className="text-xs font-bold border-2 border-marron text-marron px-6 py-2 hover:bg-marron hover:text-blanco transition-all rounded">
-                Cancelar
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
+            <p className="tex

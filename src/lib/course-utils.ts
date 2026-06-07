@@ -64,8 +64,4 @@ export function parseCourseAccess(
 
 /**
  * Construye la URL pública de un alumno para un curso.
- * Ej: buildCourseUrl("tecnica-base", "a3f9b2c1") → "/tecnica-base_a3f9b2c1"
- */
-export function buildCourseUrl(slug: string, token: string): string {
-  return `/${slug}_${token}`;
-}
+ * Ej: buildCourseUrl("tecnic
