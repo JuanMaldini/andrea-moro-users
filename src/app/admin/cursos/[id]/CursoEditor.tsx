@@ -34,6 +34,7 @@ export default function CursoEditor({ course, host }: Props) {
 
   const [title, setTitle] = useState(course.title);
   const [description, setDescription] = useState(course.description);
+  const [price, setPrice] = useState<number>(course.price ?? 0);
   const [published, setPublished] = useState(course.json?.published ?? false);
   const [slug, setSlug] = useState(course.json?.slug ?? course.id);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -57,6 +58,7 @@ export default function CursoEditor({ course, host }: Props) {
   // Refs for debounced save
   const titleRef = useRef(title);
   const descriptionRef = useRef(description);
+  const priceRef = useRef(price);
   const publishedRef = useRef(published);
   const slugRef = useRef(slug);
   const keysRef = useRef<string[]>(keys);
@@ -79,6 +81,7 @@ export default function CursoEditor({ course, host }: Props) {
       await pb.collection(COLLECTION_DATA).update(course.id, {
         title: titleRef.current.trim(),
         description: descriptionRef.current,
+        price: priceRef.current,
         json: {
           ...latest.json,
           published: publishedRef.current,
@@ -111,6 +114,13 @@ export default function CursoEditor({ course, host }: Props) {
 
   function handleDescriptionChange(val: string) {
     setDescription(val); descriptionRef.current = val;
+    scheduleSave();
+  }
+
+  function handlePriceChange(val: string) {
+    const n = parseInt(val, 10);
+    const safe = isNaN(n) ? 0 : Math.max(0, n);
+    setPrice(safe); priceRef.current = safe;
     scheduleSave();
   }
 
@@ -222,6 +232,17 @@ export default function CursoEditor({ course, host }: Props) {
             <textarea value={description} rows={4}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleDescriptionChange(e.target.value)}
               className="w-full px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all resize-none" />
+          </div>
+          <div>
+            <label className="block text-sm font-bold uppercase tracking-widest text-marron mb-3">Precio (ARS$)</label>
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={price}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePriceChange(e.target.value)}
+              className="w-48 px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all"
+            />
           </div>
           <div className="flex items-center gap-3">
             <input id="published" type="checkbox" checked={published}

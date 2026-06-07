@@ -5,6 +5,7 @@ import { type CourseRecord, buildCourseUrl } from "@/lib/course-utils";
 import LogoutButton from "@/components/LogoutButton";
 import CopiarLink from "@/components/CopiarLink";
 import PublishButton from "@/components/PublishButton";
+import SiteGalleryManager from "./SiteGalleryManager";
 
 export default async function CursosPage() {
   const pb = await createServerClient();
@@ -17,9 +18,11 @@ export default async function CursosPage() {
   let courses: CourseRecord[] = [];
   try {
     const pbAdmin = createAdminClient();
-    courses = await pbAdmin
+    const all = await pbAdmin
       .collection(COLLECTION_DATA)
       .getFullList<CourseRecord>({ sort: "title" });
+    // Excluir records de galería/andrea — solo mostrar cursos
+    courses = all.filter((r) => !r.json?.type || r.json.type === "course");
   } catch {
     // sin cursos o error de conexión
   }
@@ -117,6 +120,8 @@ export default async function CursosPage() {
           </div>
         )}
       </div>
+
+      <SiteGalleryManager />
     </main>
   );
 }

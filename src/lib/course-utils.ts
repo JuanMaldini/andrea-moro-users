@@ -13,6 +13,7 @@ export interface CourseJson {
   keys?: string[];   // lista de correos con acceso
   videos?: CourseVideo[];
   gallery?: string[]; // nombres de archivo (dentro del campo `files`) que son fotos
+  type?: "course" | "gallery" | "andrea"; // discriminador: undefined/absent = curso
 }
 
 export interface CourseRecord {
@@ -21,6 +22,7 @@ export interface CourseRecord {
                         // El reparto (qué es vídeo / qué es foto) vive en `json`.
   title: string;
   description: string;
+  price: number;        // Precio en ARS — campo raíz en PocketBase
   json: CourseJson;
   created: string;
   updated: string;
