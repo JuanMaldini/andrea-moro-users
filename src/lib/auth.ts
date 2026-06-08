@@ -4,4 +4,4 @@
  * Todos los cursos usan esta misma clave. Se comparte a las alumnas
  * por WhatsApp junto con la URL del curso.
  */
-export const COURSE_PASSWORD = "***";
+export const COURSE_PASSWORD = "PassAMT01";
