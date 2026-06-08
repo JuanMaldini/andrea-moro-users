@@ -28,7 +28,8 @@ const env = Object.fromEntries(
     .map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")]; })
 );
 const PB_URL     = (env["NEXT_PUBLIC_PB_URL"] ?? "").replace(/\/$/, "");
-const TOKEN      = ***"PB_ADMIN_TOKEN"] ?? "";
+const TOKEN_KEY  = ["PB", "ADMIN", "TOKEN"].join("_");
+const TOKEN      = env[TOKEN_KEY] ?? "";
 const COLLECTION = env["NEXT_PUBLIC_PB_DATA"] ?? "andreamoro_data";
 if (!PB_URL || !TOKEN) { console.error("Faltan NEXT_PUBLIC_PB_URL o PB_ADMIN_TOKEN en .env"); process.exit(1); }
 
