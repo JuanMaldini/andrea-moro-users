@@ -14,8 +14,8 @@
 
 import { readFileSync, mkdirSync, rmSync, existsSync, appendFileSync, writeFileSync } from "fs";
 import { writeFile } from "fs/promises";
-import { execSync } from "child_process";
-import { join } from "path";
+import { execSync, spawnSync } from "child_process";
+import { join, extname } from "path";
 
 // ── .env ──────────────────────────────────────────────────────────────────
 const envPath = new URL("../.env", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
@@ -69,7 +69,8 @@ function log(...args) {
 }
 
 function logSection(title) {
-  const line = `\n══ ${title} ${"═".repeat(50 - title.length)}\n`;
+  const padding = Math.max(0, 60 - title.length - 4);
+  const line = `\n══ ${title} ${"═".repeat(padding)}\n`;
   console.log(line.trimEnd());
   LOG_LINES.push(line.trimEnd());
 }
@@ -156,11 +157,15 @@ async function updateJson(recordId, newJson) {
 // ── ffprobe: codec del primer stream de video ─────────────────────────────
 function getVideoCodec(filePath) {
   try {
-    const out = execSync(
-      `ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "${filePath}"`,
-      { encoding: "utf-8", timeout: 30000 }
-    ).trim();
-    return out || null;
+    const r = spawnSync("ffprobe", [
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=codec_name",
+      "-of", "csv=p=0",
+      filePath,
+    ], { encoding: "utf-8", timeout: 30000 });
+    if (r.status !== 0) return null;
+    return (r.stdout ?? "").trim() || null;
   } catch {
     return null;
   }
@@ -168,24 +173,35 @@ function getVideoCodec(filePath) {
 
 // ── Detecta si un video necesita conversión ───────────────────────────────
 function needsConversion(filePath) {
-  const ext  = (extname(filePath).replace(".", "").toLowerCase());
+  const ext = extname(filePath).replace(".", "").toLowerCase();
   const extBad = BAD_EXTS.has(ext);
-  let codecBad = false;
 
-  if (!extBad) {
-    const codec = getVideoCodec(filePath);
-    codecBad = BAD_CODECS.has(codec ?? "");
+  if (extBad) {
+    return { needs: true, reason: `ext=${ext}` };
   }
 
-  return { needs: extBad || codecBad, reason: extBad ? `ext=${ext}` : `codec=${getVideoCodec(filePath) ?? "?"}` };
+  // Si ya es .mp4/.m4v, ffprobe para confirmar el codec
+  const codec = getVideoCodec(filePath);
+  const codecBad = BAD_CODECS.has(codec ?? "");
+  return {
+    needs: codecBad,
+    reason: codecBad ? `codec=${codec}` : `codec=${codec ?? "?"} (ok)`,
+  };
 }
 
 // ── ffmpeg: H.264 + AAC, optimizado para web ─────────────────────────────
 function convert(inputPath, outputPath) {
-  execSync(
-    `ffmpeg -y -i "${inputPath}" -vcodec libx264 -preset fast -crf 22 -acodec aac -movflags +faststart "${outputPath}"`,
-    { stdio: "inherit", timeout: 3600000 } // 1h max por video
-  );
+  const r = spawnSync("ffmpeg", [
+    "-y",
+    "-i", inputPath,
+    "-vcodec", "libx264",
+    "-preset", "fast",
+    "-crf", "22",
+    "-acodec", "aac",
+    "-movflags", "+faststart",
+    outputPath,
+  ], { stdio: "inherit", timeout: 3600000 }); // 1h max por video
+  if (r.status !== 0) throw new Error(`ffmpeg exit code ${r.status}`);
 }
 
 // ── Gitignore: asegurar que _logs/ esté excluido ──────────────────────────
@@ -232,7 +248,7 @@ function ensureGitignoreExcludesLogs() {
     process.exit(1);
   }
 
-  const courses = all.filter(r => !r.json?.type || r.json.type === "course");
+  const courses = all.filter(r => r.json && (!r.json.type || r.json.type === "course"));
   log(`Cursos encontrados: ${courses.length}`);
 
   // Stats
@@ -317,6 +333,7 @@ function ensureGitignoreExcludesLogs() {
       }
 
       // 5. Actualizar json.videos (mismo orden, mismo nombre, solo cambia file)
+      let jsonOk = true;
       try {
         const latest = await getRecord(course.id);
         const updatedVideos = (latest.json?.videos ?? []).map(v2 =>
@@ -325,16 +342,21 @@ function ensureGitignoreExcludesLogs() {
         await updateJson(course.id, { ...latest.json, videos: updatedVideos });
         log(`  json.videos actualizado`);
       } catch (err) {
+        jsonOk = false;
+        stats.errors++;
         logError(`Update json falló: ${err.message}`);
         errors.push({ course: course.title, video: video.file, step: "update-json", error: err.message });
         // Continuar igual — el archivo ya está subido, se puede reparar a mano
       }
 
       // 6. Borrar el archivo viejo
+      let removeOk = true;
       try {
         await removeFile(course.id, video.file);
         log(`  Archivo original eliminado: ${video.file}`);
       } catch (err) {
+        removeOk = false;
+        stats.errors++;
         logError(`No se pudo borrar archivo original ${video.file}: ${err.message}`);
         errors.push({ course: course.title, video: video.file, step: "remove-old", error: err.message });
       }
@@ -342,9 +364,18 @@ function ensureGitignoreExcludesLogs() {
       // Limpiar temporales
       rmSync(inputPath, { force: true });
       rmSync(outputPath, { force: true });
-      stats.reencoded++;
-      console.log(`  ✅ Listo`);
-      log(`  ✅ Completado\n`);
+
+      // Solo contar como re-encoded si TODO el ciclo pasó OK
+      if (jsonOk && removeOk) {
+        stats.reencoded++;
+        console.log(`  ✅ Listo`);
+        log(`  ✅ Completado\n`);
+      } else {
+        // jsonOk/removeOk falló, pero ya incrementamos errors en cada catch.
+        // Acá solo logueamos el estado final del video.
+        console.log(`  ⚠️  Completado con errores parciales (ver log)`);
+        log(`  ⚠️  Completado con errores parciales\n`);
+      }
     }
   }
 
