@@ -40,7 +40,6 @@ export default async function CourseAccessPage({ params }: Props) {
       videos={videos}
       pbUrl={getPbUrl()}
       collectionName={COLLECTION_DATA}
-      published={course.json?.published ?? false}
       gallery={course.json?.gallery ?? []}
     />
   );

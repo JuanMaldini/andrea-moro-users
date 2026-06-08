@@ -14,7 +14,6 @@ interface Props {
   videos: CourseVideo[];
   pbUrl: string;
   collectionName: string;
-  published: boolean;
   gallery: string[];
 }
 
@@ -22,7 +21,7 @@ const SESSION_KEY = "course_access_global";
 
 export default function CoursePageClient({
   courseId, token, title, description, videos,
-  pbUrl, collectionName, published, gallery,
+  pbUrl, collectionName, gallery,
 }: Props) {
   const sessionKey = SESSION_KEY;
   const [state, setState] = useState<State>("presentation");
@@ -35,12 +34,11 @@ export default function CoursePageClient({
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!published) return;
     try {
       const saved = sessionStorage.getItem(sessionKey);
       if (saved && JSON.parse(saved).validated) setState("videos");
     } catch { /* */ }
-  }, [sessionKey, published]);
+  }, [sessionKey]);
 
   // Close modal on Escape
   useEffect(() => {
@@ -120,23 +118,16 @@ export default function CoursePageClient({
               <p className="text-xs text-grisclarito mb-6">
                 {videos.length} lección{videos.length !== 1 ? "es" : ""}
               </p>
-              {published ? (
-                <button onClick={() => setState("access")}
-                  className="w-full py-3 bg-marron text-blanco text-xs font-medium uppercase tracking-widest hover:bg-marroncalido transition-colors">
-                  Acceder al curso
-                </button>
-              ) : (
-                <button disabled
-                  className="w-full py-3 bg-grisoscuro text-grisclarito text-xs font-medium uppercase tracking-widest cursor-not-allowed">
-                  Próximamente
-                </button>
-              )}
+              <button onClick={() => setState("access")}
+                className="w-full py-3 bg-marron text-blanco text-xs font-medium uppercase tracking-widest hover:bg-marroncalido transition-colors">
+                Acceder al curso
+              </button>
             </div>
           </div>
         )}
 
         {/* ACCESO */}
-        {state === "access" && published && (
+        {state === "access" && (
           <div className="bg-blanco shadow-sm px-8 py-10">
             <button onClick={() => setState("presentation")}
               className="text-xs text-grisclarito hover:text-marron mb-8 inline-block transition-colors">

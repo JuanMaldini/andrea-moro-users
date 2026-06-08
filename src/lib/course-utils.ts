@@ -7,7 +7,7 @@ export interface CourseVideo {
 }
 
 export interface CourseJson {
-  published?: boolean;
+  published?: boolean; // siempre true; se conserva por compat con datos existentes
   slug?: string;
   token?: string;    // parte de la URL del curso (no se valida, solo identifica)
   videos?: CourseVideo[];

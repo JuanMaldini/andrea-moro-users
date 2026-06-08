@@ -4,7 +4,6 @@ import { createServerClient, createAdminClient, COLLECTION_DATA } from "@/lib/po
 import { type CourseRecord, buildCourseUrl } from "@/lib/course-utils";
 import LogoutButton from "@/components/LogoutButton";
 import CopiarLink from "@/components/CopiarLink";
-import PublishButton from "@/components/PublishButton";
 import SiteGalleryManager from "./SiteGalleryManager";
 
 export default async function CursosPage() {
@@ -75,11 +74,6 @@ export default async function CursosPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm md:text-base font-bold text-blanco break-words">
                         {course.title || "Sin título"}
-                        {course.json?.published === false && (
-                          <span className="ml-1 text-xs text-blanco/80 font-normal">
-                            (no publicado)
-                          </span>
-                        )}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
@@ -92,14 +86,10 @@ export default async function CursosPage() {
                     </div>
                   </div>
 
-                  {/* Fila de acciones: Abrir · Copiar · WhatsApp · Publicar */}
+                  {/* Fila de acciones: Abrir · Copiar · WhatsApp */}
                   {copyUrl && (
                     <div className="px-2 py-2 bg-vanilla flex items-stretch gap-1">
                       <CopiarLink url={copyUrl} />
-                      <PublishButton
-                        courseId={course.id}
-                        published={course.json?.published !== false}
-                      />
                     </div>
                   )}
                 </Link>

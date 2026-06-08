@@ -33,7 +33,6 @@ export default function CursoEditor({ course }: Props) {
   const [title, setTitle] = useState(course.title);
   const [description, setDescription] = useState(course.description);
   const [price, setPrice] = useState<number>(course.price ?? 0);
-  const [published, setPublished] = useState(course.json?.published ?? false);
   const [slug, setSlug] = useState(course.json?.slug ?? course.id);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [passCopied, setPassCopied] = useState(false);
@@ -52,7 +51,6 @@ export default function CursoEditor({ course }: Props) {
   const titleRef = useRef(title);
   const descriptionRef = useRef(description);
   const priceRef = useRef(price);
-  const publishedRef = useRef(published);
   const slugRef = useRef(slug);
   const videosRef = useRef<CourseVideo[]>(videos);
   const galleryRef = useRef<string[]>(gallery);
@@ -71,7 +69,7 @@ export default function CursoEditor({ course }: Props) {
         price: priceRef.current,
         json: {
           ...latest.json,
-          published: publishedRef.current,
+          published: true,
           slug: slugRef.current,
           videos: videosRef.current,
           gallery: galleryRef.current,
@@ -107,11 +105,6 @@ export default function CursoEditor({ course }: Props) {
     const safe = isNaN(n) ? 0 : Math.max(0, n);
     setPrice(safe); priceRef.current = safe;
     scheduleSave();
-  }
-
-  function handlePublishedChange(val: boolean) {
-    setPublished(val); publishedRef.current = val;
-    scheduleSave(0);
   }
 
   function handleCopyPass() {
@@ -207,13 +200,6 @@ export default function CursoEditor({ course }: Props) {
                 </button>
               </div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <input id="published" type="checkbox" checked={published}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePublishedChange(e.target.checked)}
-              className="w-5 h-5 accent-marron cursor-pointer" />
-            <label htmlFor="published" className="text-sm font-semibold text-marron cursor-pointer">Publicado</label>
           </div>
         </div>
       </section>
