@@ -86,10 +86,10 @@ export default async function CursosPage() {
                     </div>
                   </div>
 
-                  {/* Fila de acciones: Abrir · Copiar · WhatsApp */}
+                  {/* Fila de acciones: Editar · WhatsApp · Copiar · Abrir */}
                   {copyUrl && (
                     <div className="px-2 py-2 bg-vanilla flex items-stretch gap-1">
-                      <CopiarLink url={copyUrl} />
+                      <CopiarLink url={copyUrl} courseId={course.id} />
                     </div>
                   )}
                 </Link>
