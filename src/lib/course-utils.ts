@@ -9,8 +9,7 @@ export interface CourseVideo {
 export interface CourseJson {
   published?: boolean;
   slug?: string;
-  token?: string;    // un único token por curso — forma parte de la URL
-  keys?: string[];   // lista de correos con acceso
+  token?: string;    // parte de la URL del curso (no se valida, solo identifica)
   videos?: CourseVideo[];
   gallery?: string[]; // nombres de archivo (dentro del campo `files`) que son fotos
   type?: "course" | "gallery" | "andrea"; // discriminador: undefined/absent = curso

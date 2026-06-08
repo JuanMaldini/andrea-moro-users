@@ -57,7 +57,6 @@ export default async function CursosPage() {
         ) : (
           <div className="space-y-6">
             {courses.map((course) => {
-              const keys = course.json?.keys ?? [];
               const videos = course.json?.videos ?? [];
               const slug = course.json?.slug ?? "";
               const courseToken = course.json?.token;
@@ -71,7 +70,7 @@ export default async function CursosPage() {
                   href={`/admin/cursos/${course.id}`}
                   className="block bg-blanco border-2 border-marron rounded-lg overflow-hidden hover:shadow-xl transition-all hover:border-marroncalido group"
                 >
-                  {/* Sección de Título, Claves y Vídeos en un row */}
+                  {/* Sección de Título y Vídeos en un row */}
                   <div className="bg-marron px-3 md:px-4 py-3 md:py-3 flex items-center justify-between gap-3 border-b-2 border-grisoscuro group-hover:bg-marroncalido transition-colors">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm md:text-base font-bold text-blanco break-words">
@@ -83,24 +82,13 @@ export default async function CursosPage() {
                         )}
                       </p>
                     </div>
-                    <div className="flex items-center gap-4 md:gap-5 flex-shrink-0">
-                      <div className="flex items-center gap-1">
-                        <p className="text-sm md:text-base font-bold text-blanco">
-                          {keys.length}
-                        </p>
-                        <p className="text-xs md:text-sm text-blanco/90 font-medium">
-                          {keys.length === 1 ? "clave" : "cl."}
-                        </p>
-                      </div>
-                      <div className="w-px h-4 bg-blanco/30"></div>
-                      <div className="flex items-center gap-1">
-                        <p className="text-sm md:text-base font-bold text-blanco">
-                          {videos.length}
-                        </p>
-                        <p className="text-xs md:text-sm text-blanco/90 font-medium">
-                          {videos.length === 1 ? "vid." : "vid."}
-                        </p>
-                      </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <p className="text-sm md:text-base font-bold text-blanco">
+                        {videos.length}
+                      </p>
+                      <p className="text-xs md:text-sm text-blanco/90 font-medium">
+                        {videos.length === 1 ? "vid." : "vid."}
+                      </p>
                     </div>
                   </div>
 

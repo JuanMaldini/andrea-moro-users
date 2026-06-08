@@ -31,10 +31,6 @@ export default async function CursoDetailPage({ params }: Props) {
 
   if (!course) return notFound();
 
-  const host =
-    (process.env["NEXT_PUBLIC_SITE_URL"] as string | undefined) ??
-    "https://cursos.andreamorotienda.com";
-
   return (
     <main className="min-h-screen bg-vanilla">
       <nav className="bg-blanco border-b border-grisoscuro px-6 py-4">
@@ -56,7 +52,7 @@ export default async function CursoDetailPage({ params }: Props) {
       </nav>
 
       <div className="max-w-4xl mx-auto px-4 md:px-6 py-10">
-        <CursoEditor course={course} host={host} />
+        <CursoEditor course={course} />
       </div>
     </main>
   );

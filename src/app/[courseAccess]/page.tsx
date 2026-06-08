@@ -27,9 +27,6 @@ export default async function CourseAccessPage({ params }: Props) {
 
   if (!course) return notFound();
 
-  // Verify course-level token
-  if (course.json?.token !== token) return notFound();
-
   const videos: CourseVideo[] = (course.json?.videos ?? []).sort(
     (a, b) => a.order - b.order
   );

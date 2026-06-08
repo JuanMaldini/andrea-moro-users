@@ -3,18 +3,16 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getPocketBase, COLLECTION_DATA } from "@/lib/pocketbase-browser";
+import { COURSE_PASSWORD } from "@/lib/auth";
 import {
   type CourseRecord,
-  type CourseJson,
   type CourseVideo,
-  buildCourseUrl,
 } from "@/lib/course-utils";
 import VideoUploader from "./VideoUploader";
 import GalleryUploader from "./GalleryUploader";
 
 interface Props {
   course: CourseRecord;
-  host: string;
 }
 
 function slugify(text: string): string {
@@ -29,7 +27,7 @@ function slugify(text: string): string {
 
 type SaveStatus = "idle" | "saving" | "saved";
 
-export default function CursoEditor({ course, host }: Props) {
+export default function CursoEditor({ course }: Props) {
   const router = useRouter();
 
   const [title, setTitle] = useState(course.title);
@@ -38,17 +36,12 @@ export default function CursoEditor({ course, host }: Props) {
   const [published, setPublished] = useState(course.json?.published ?? false);
   const [slug, setSlug] = useState(course.json?.slug ?? course.id);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-
-  // Keys: plain email strings
-  const [keys, setKeys] = useState<string[]>((course.json?.keys ?? []) as string[]);
-  const [newEmail, setNewEmail] = useState("");
-  const [addingKey, setAddingKey] = useState(false);
-  const [keyError, setKeyError] = useState("");
+  const [passCopied, setPassCopied] = useState(false);
 
   // Videos
   const [videos, setVideos] = useState<CourseVideo[]>(course.json?.videos ?? []);
 
-  // Gallery (nombres de archivo dentro de `files` que son fotos)
+  // Gallery
   const [gallery, setGallery] = useState<string[]>(course.json?.gallery ?? []);
 
   // Delete course
@@ -61,13 +54,9 @@ export default function CursoEditor({ course, host }: Props) {
   const priceRef = useRef(price);
   const publishedRef = useRef(published);
   const slugRef = useRef(slug);
-  const keysRef = useRef<string[]>(keys);
   const videosRef = useRef<CourseVideo[]>(videos);
   const galleryRef = useRef<string[]>(gallery);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const courseToken = course.json?.token ?? "";
-  const courseUrl = slug && courseToken ? `${host}${buildCourseUrl(slug, courseToken)}` : "";
 
   // ── Save ────────────────────────────────────────────────────────────────
 
@@ -75,8 +64,6 @@ export default function CursoEditor({ course, host }: Props) {
     setSaveStatus("saving");
     try {
       const pb = getPocketBase();
-      // Leer el JSON más reciente del servidor para no pisar videos/gallery
-      // que hayan sido guardados mientras se editaba título o descripción.
       const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(course.id);
       await pb.collection(COLLECTION_DATA).update(course.id, {
         title: titleRef.current.trim(),
@@ -86,8 +73,6 @@ export default function CursoEditor({ course, host }: Props) {
           ...latest.json,
           published: publishedRef.current,
           slug: slugRef.current,
-          token: courseToken,
-          keys: keysRef.current,
           videos: videosRef.current,
           gallery: galleryRef.current,
         },
@@ -129,45 +114,11 @@ export default function CursoEditor({ course, host }: Props) {
     scheduleSave(0);
   }
 
-  // ── Keys (plain emails) ──────────────────────────────────────────────────
-
-  async function handleAddKey(e: React.FormEvent) {
-    e.preventDefault();
-    setKeyError("");
-    const trimmed = newEmail.trim().toLowerCase();
-    if (!trimmed) return;
-    if (keys.includes(trimmed)) { setKeyError("Ya existe."); return; }
-    setAddingKey(true);
-    const updated = [...keys, trimmed];
-    keysRef.current = updated;
-    try {
-      const pb = getPocketBase();
-      const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(course.id);
-      await pb.collection(COLLECTION_DATA).update(course.id, {
-        json: { ...latest.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current, gallery: galleryRef.current },
-      });
-      setKeys(updated);
-      setNewEmail("");
-    } catch {
-      setKeyError("Error al guardar.");
-    } finally {
-      setAddingKey(false);
-    }
-  }
-
-  async function handleDeleteKey(email: string) {
-    const updated = keys.filter((k) => k !== email);
-    keysRef.current = updated;
-    try {
-      const pb = getPocketBase();
-      const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(course.id);
-      await pb.collection(COLLECTION_DATA).update(course.id, {
-        json: { ...latest.json, token: courseToken, slug: slugRef.current, keys: updated, videos: videosRef.current, gallery: galleryRef.current },
-      });
-      setKeys(updated);
-    } catch {
-      alert("Error al eliminar.");
-    }
+  function handleCopyPass() {
+    navigator.clipboard.writeText(COURSE_PASSWORD).then(() => {
+      setPassCopied(true);
+      setTimeout(() => setPassCopied(false), 1500);
+    });
   }
 
   // ── Videos callback ──────────────────────────────────────────────────────
@@ -196,10 +147,6 @@ export default function CursoEditor({ course, host }: Props) {
       setDeleting(false);
       setConfirmDelete(false);
     }
-  }
-
-  function copyToClipboard(text: string) {
-    navigator.clipboard.writeText(text).catch(() => {});
   }
 
   const statusLabel =
@@ -233,74 +180,41 @@ export default function CursoEditor({ course, host }: Props) {
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleDescriptionChange(e.target.value)}
               className="w-full px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all resize-none" />
           </div>
-          <div>
-            <label className="block text-sm font-bold uppercase tracking-widest text-marron mb-3">Precio (ARS$)</label>
-            <input
-              type="number"
-              min={0}
-              step={100}
-              value={price}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePriceChange(e.target.value)}
-              className="w-48 px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all"
-            />
+
+          {/* Precio + Clave de acceso (lado a lado) */}
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className="block text-sm font-bold uppercase tracking-widest text-marron mb-3">Precio (ARS$)</label>
+              <input
+                type="number"
+                min={0}
+                step={100}
+                value={price}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePriceChange(e.target.value)}
+                className="w-48 px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold uppercase tracking-widest text-marron mb-3">Clave de acceso</label>
+              <div className="w-48 px-4 py-3 border-2 border-marron bg-vanilla flex items-center justify-between gap-2">
+                <span className="font-mono font-semibold text-negro text-base">{COURSE_PASSWORD}</span>
+                <button
+                  type="button"
+                  onClick={handleCopyPass}
+                  className="text-xs font-semibold text-blanco bg-marron border-2 border-marron px-2 py-1 hover:bg-marroncalido hover:border-marroncalido transition-all rounded flex-shrink-0"
+                >
+                  {passCopied ? "✓" : "Copiar"}
+                </button>
+              </div>
+            </div>
           </div>
+
           <div className="flex items-center gap-3">
             <input id="published" type="checkbox" checked={published}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePublishedChange(e.target.checked)}
               className="w-5 h-5 accent-marron cursor-pointer" />
             <label htmlFor="published" className="text-sm font-semibold text-marron cursor-pointer">Publicado</label>
           </div>
-        </div>
-      </section>
-
-      {/* === URL del curso === */}
-      {courseUrl && (
-        <section>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-marron mb-4">URL del curso</h2>
-          <div className="bg-grisclaro border-2 border-marron px-5 py-4 flex items-center justify-between gap-4 rounded">
-            <p className="text-sm text-marron font-mono font-semibold truncate">{courseUrl}</p>
-            <button
-              onClick={() => copyToClipboard(courseUrl)}
-              className="text-xs font-semibold text-blanco bg-marron border-2 border-marron px-4 py-2 hover:bg-marroncalido hover:border-marroncalido transition-all flex-shrink-0 rounded"
-            >
-              Copiar
-            </button>
-          </div>
-          <p className="text-sm text-marron font-semibold mt-3">
-            Esta URL es la misma para todas las alumnas. Cada una entra con su correo.
-          </p>
-        </section>
-      )}
-
-      {/* === Correos con acceso === */}
-      <section>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-marron mb-5">
-          Correos con acceso ({keys.length})
-        </h2>
-        <form onSubmit={handleAddKey} className="flex gap-3 mb-4">
-          <input type="text" value={newEmail}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewEmail(e.target.value)}
-            required placeholder="alumna@correo.com"
-            className="flex-1 px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all rounded" />
-          <button type="submit" disabled={addingKey}
-            className="px-6 py-3 bg-marron text-blanco text-xs font-bold uppercase tracking-widest hover:bg-marroncalido transition-all disabled:opacity-50 whitespace-nowrap rounded">
-            {addingKey ? "Añadiendo..." : "+ Añadir"}
-          </button>
-        </form>
-        {keyError && <p className="text-rojo text-sm font-semibold mb-3 bg-rojo/10 px-3 py-2 rounded border border-rojo">{keyError}</p>}
-        <div className="space-y-2">
-          {keys.map((email) => (
-            <div key={email} className="bg-grisclaro border-2 border-marron px-5 py-3 flex items-center justify-between rounded">
-              <span className="text-sm font-semibold text-marron">{email}</span>
-              <button onClick={() => handleDeleteKey(email)}
-                className="text-xs font-bold text-blanco bg-rojo px-3 py-1 hover:opacity-80 transition-opacity rounded">
-                ✕
-              </button>
-            </div>
-          ))}
-          {keys.length === 0 && (
-            <p className="text-sm text-marron text-center py-6 bg-grisclaro rounded border-2 border-grisoscuro">Sin correos. Añade el primero.</p>
-          )}
         </div>
       </section>
 

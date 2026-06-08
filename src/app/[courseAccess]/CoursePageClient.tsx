@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { CourseVideo } from "@/lib/course-utils";
+import { COURSE_PASSWORD } from "@/lib/auth";
 
 type State = "presentation" | "access" | "videos";
 
@@ -17,17 +18,16 @@ interface Props {
   gallery: string[];
 }
 
-const SESSION_KEY_PREFIX = "course_access_";
+const SESSION_KEY = "course_access_global";
 
 export default function CoursePageClient({
   courseId, token, title, description, videos,
   pbUrl, collectionName, published, gallery,
 }: Props) {
-  const sessionKey = `${SESSION_KEY_PREFIX}${token}`;
+  const sessionKey = SESSION_KEY;
   const [state, setState] = useState<State>("presentation");
-  const [email, setEmail] = useState("");
+  const [clave, setClave] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const [modalVideo, setModalVideo] = useState<CourseVideo | null>(null);
   const [modalVideoError, setModalVideoError] = useState<string | null>(null);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
@@ -56,26 +56,14 @@ export default function CoursePageClient({
     return () => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); };
   }, []);
 
-  async function handleAccessSubmit(e: React.FormEvent) {
+  function handleAccessSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(""); setLoading(true);
-    try {
-      const res = await fetch("/api/validate-access", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courseId, token, email: email.trim() }),
-      });
-      const { valid } = await res.json();
-      if (valid) {
-        try { sessionStorage.setItem(sessionKey, JSON.stringify({ validated: true })); } catch { /* */ }
-        setState("videos");
-      } else {
-        setError("Clave no reconocida. Comprueba que es la correcta.");
-      }
-    } catch {
-      setError("Error de conexión. Inténtalo de nuevo.");
-    } finally {
-      setLoading(false);
+    setError("");
+    if (clave.trim() === COURSE_PASSWORD) {
+      try { sessionStorage.setItem(sessionKey, JSON.stringify({ validated: true })); } catch { /* */ }
+      setState("videos");
+    } else {
+      setError("Clave no reconocida. Comprueba que es la correcta.");
     }
   }
 
@@ -160,17 +148,17 @@ export default function CoursePageClient({
               <div>
                 <label htmlFor="clave"
                   className="block text-xs font-medium uppercase tracking-widest text-marroncalido mb-2">
-                  Tu correo o clave de acceso
+                  Clave de acceso
                 </label>
-                <input id="clave" type="text" value={email}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-                  required autoComplete="email" placeholder="tu@correo.com"
+                <input id="clave" type="password" value={clave}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setClave(e.target.value)}
+                  required autoComplete="off" placeholder="Ingresá la clave"
                   className="w-full px-4 py-3 border border-grisoscuro bg-vanilla text-sm focus:outline-none focus:border-marron transition-colors" />
               </div>
               {error && <p className="text-rojo text-xs leading-relaxed">{error}</p>}
-              <button type="submit" disabled={loading}
-                className="w-full py-3 bg-marron text-blanco text-xs font-medium uppercase tracking-widest hover:bg-marroncalido transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                {loading ? "Verificando..." : "Entrar"}
+              <button type="submit"
+                className="w-full py-3 bg-marron text-blanco text-xs font-medium uppercase tracking-widest hover:bg-marroncalido transition-colors">
+                Entrar
               </button>
             </form>
           </div>

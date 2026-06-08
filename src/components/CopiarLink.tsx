@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { COURSE_PASSWORD } from "@/lib/auth";
 
 interface Props {
   url: string;
@@ -23,7 +24,8 @@ export default function CopiarLink({ url }: Props) {
   function handleWhatsApp(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    window.open(`https://wa.me/?text=${encodeURIComponent(url)}`, "_blank", "noopener,noreferrer");
+    const message = `${url}\n${COURSE_PASSWORD}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   }
 
   function handleOpen(e: React.MouseEvent) {
