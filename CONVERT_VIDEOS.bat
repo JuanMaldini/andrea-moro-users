@@ -1,11 +1,11 @@
 @echo off
-REM Ejecuta el script de conversion de videos.
-REM Requiere ffmpeg + ffprobe en PATH.
+REM Doble click para correr el conversor de videos.
+REM Requiere ffmpeg en PATH (winget install -e --id Gyan.FFmpeg).
 
 cd /d "%~dp0"
 node scripts\CONVERT_VIDEOS.mjs
-if errorlevel 1 (
-  echo.
-  echo *** Hubo errores. Revisa el log de arriba. ***
-  pause
-)
+echo.
+echo ===========================================
+echo  Proceso terminado. Log en scripts\_logs\
+echo ===========================================
+pause

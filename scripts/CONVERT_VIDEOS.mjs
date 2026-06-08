@@ -1,431 +1,177 @@
 /**
  * CONVERT_VIDEOS.mjs
  *
- * Recorre los cursos de PocketBase, descarga cada vídeo, detecta si el codec
- * o la extensión son problemáticos para browsers, los re-encodea a
- * H.264/AAC con ffmpeg, sube el convertido, actualiza json.videos
- * preservando orden y nombre, y genera un log detallado.
+ * Recorre los vídeos de cada curso, los descarga, los re-encodea con
+ * ffmpeg a H.264 (main profile, yuv420p) + AAC en MP4 con faststart, y
+ * los sube reemplazando al original. Si algo falla, loguea y corta.
  *
- * Usage:  node scripts/CONVERT_VIDEOS.mjs
- *         (o desde el .bat:  CONVERT_VIDEOS.bat)
+ * Requiere: ffmpeg en PATH.
+ * Ejecutar: doble click en CONVERT_VIDEOS.bat  (o  node scripts/CONVERT_VIDEOS.mjs)
  *
- * Requiere: ffmpeg + ffprobe en PATH, y .env configurado.
+ * No detecta codec: siempre re-encodea. No cambia resolución.
  */
 
-import { readFileSync, mkdirSync, rmSync, existsSync, appendFileSync, writeFileSync } from "fs";
+import { readFileSync, mkdirSync, rmSync, existsSync, writeFileSync, appendFileSync } from "fs";
 import { writeFile } from "fs/promises";
 import { execSync, spawnSync } from "child_process";
-import { join, extname } from "path";
+import { join } from "path";
 
 // ── .env ──────────────────────────────────────────────────────────────────
 const envPath = new URL("../.env", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
-if (!existsSync(envPath)) {
-  const msg = "No se encontró .env";
-  console.error(msg);
-  process.exit(1);
-}
+if (!existsSync(envPath)) { console.error("No se encontró .env"); process.exit(1); }
 const env = Object.fromEntries(
   readFileSync(envPath, "utf-8").split("\n")
     .filter(l => l.includes("=") && !l.startsWith("#"))
-    .map(l => {
-      const i = l.indexOf("=");
-      return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")];
-    })
+    .map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")]; })
 );
 const PB_URL     = (env.NEXT_PUBLIC_PB_URL ?? "").replace(/\/$/, "");
-const TOKEN      = env.PB_ADMIN_TOKEN ?? "";
+const TOKEN      = env.PB…OKEN ?? "";
 const COLLECTION = env.NEXT_PUBLIC_PB_DATA ?? "andreamoro_data";
-if (!PB_URL || !TOKEN) {
-  const msg = "Faltan NEXT_PUBLIC_PB_URL o PB_ADMIN_TOKEN en .env";
-  console.error(msg);
-  process.exit(1);
+if (!PB_URL || !TOKEN) { console.error("Faltan NEXT_PUBLIC_PB_URL o PB_ADMIN_TOKEN en .env"); process.exit(1); }
+
+// ── Logs ──────────────────────────────────────────────────────────────────
+const LOG_DIR = join(import.meta.dirname, "_logs");
+mkdirSync(LOG_DIR, { recursive: true });
+const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+const logFile = join(LOG_DIR, `run-${stamp}.log`);
+writeFileSync(logFile, "");
+function log(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  appendFileSync(logFile, line);
+  process.stdout.write(line);
 }
 
-// ── Dependencias del sistema ──────────────────────────────────────────────
+// ── Chequeo ffmpeg ────────────────────────────────────────────────────────
 try { execSync("ffmpeg -version", { stdio: "ignore" }); }
-catch { console.error("ffmpeg no encontrado. Instalalo y volvé a correr."); process.exit(1); }
-try { execSync("ffprobe -version", { stdio: "ignore" }); }
-catch { console.error("ffprobe no encontrado. Instalalo y volvé a correr."); process.exit(1); }
+catch { log("ffmpeg no encontrado. Instalalo y volvé a correr."); process.exit(1); }
 
-// ── Rutas y constantes ────────────────────────────────────────────────────
-const SCRIPT_DIR   = new URL(".", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
-const TMP_DIR      = join(SCRIPT_DIR, "_convert_tmp");
-const LOG_DIR      = join(SCRIPT_DIR, "_logs");
-
-// Extensiones que NO son MP4 y requieren conversión
-const BAD_EXTS  = new Set(["mov", "avi", "mkv", "wmv", "flv", "m2ts", "mts", "webm", "ogv", "mpeg", "mpg", "3gp"]);
-// Codecs de video que no son H.264
-const BAD_CODECS = new Set(["hevc", "h265", "vp9", "vp8", "av1", "mpeg4", "mpeg2video"]);
-
-// ── Logger ───────────────────────────────────────────────────────────────
-const LOG_FILE = join(LOG_DIR, `convert_${formatTimestamp(new Date())}.log`);
-const LOG_LINES = [];
-
-function log(...args) {
-  const ts = new Date().toLocaleTimeString("es-AR");
-  const line = `[${ts}] ${args.join(" ")}`;
-  console.log(line);
-  LOG_LINES.push(line);
-}
-
-function logSection(title) {
-  const padding = Math.max(0, 60 - title.length - 4);
-  const line = `\n══ ${title} ${"═".repeat(padding)}\n`;
-  console.log(line.trimEnd());
-  LOG_LINES.push(line.trimEnd());
-}
-
-function logError(...args) {
-  const ts = new Date().toLocaleTimeString("es-AR");
-  const line = `[${ts}] ❌ ERROR: ${args.join(" ")}`;
-  console.error(line);
-  LOG_LINES.push(line);
-}
-
-function flushLog() {
-  try {
-    mkdirSync(LOG_DIR, { recursive: true });
-    appendFileSync(LOG_FILE, LOG_LINES.join("\n") + "\n", "utf-8");
-  } catch (e) {
-    console.error(`No se pudo escribir el log en ${LOG_FILE}: ${e.message}`);
-  }
-}
-
-function formatTimestamp(d) {
-  const pad = n => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-}
+const TMP = join(import.meta.dirname, "_tmp");
+mkdirSync(TMP, { recursive: true });
 
 // ── API PocketBase ────────────────────────────────────────────────────────
-async function getAll() {
-  const r = await fetch(`${PB_URL}/api/collections/${COLLECTION}/records?perPage=200`, {
-    headers: { Authorization: TOKEN },
-  });
-  if (!r.ok) throw new Error(`getAll: ${r.status}`);
-  return (await r.json()).items ?? [];
+async function api(method, path, body, isForm) {
+  const opts = { method, headers: { Authorization: TOKEN } };
+  if (body) {
+    if (isForm) opts.body = body;
+    else { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+  }
+  const r = await fetch(`${PB_URL}/api/${path}`, opts);
+  const text = await r.text();
+  if (!r.ok) throw new Error(`${method} /api/${path} → HTTP ${r.status}\n${text}`);
+  return text ? JSON.parse(text) : {};
 }
 
-async function getRecord(id) {
-  const r = await fetch(`${PB_URL}/api/collections/${COLLECTION}/records/${id}`, {
-    headers: { Authorization: TOKEN },
-  });
-  if (!r.ok) throw new Error(`getRecord: ${r.status}`);
-  return r.json();
-}
+const getAll     = async () => (await api("GET", `collections/${COLLECTION}/records?perPage=200`)).items ?? [];
+const getRecord  = (id) => api("GET", `collections/${COLLECTION}/records/${id}`);
 
-async function downloadFile(recordId, filename, dest) {
-  const url = `${PB_URL}/api/files/${COLLECTION}/${recordId}/${filename}`;
-  const r = await fetch(url, { headers: { Authorization: TOKEN } });
-  if (!r.ok) throw new Error(`download ${filename}: ${r.status}`);
-  await writeFile(dest, Buffer.from(await r.arrayBuffer()));
-}
-
-async function addFile(recordId, filePath, filename) {
+async function addFile(recordId, filePath, name) {
   const before = await getRecord(recordId);
   const filesBefore = new Set(before.files ?? []);
-
   const fd = new FormData();
-  fd.append("files+", new Blob([readFileSync(filePath)], { type: "video/mp4" }), filename);
-
-  const r = await fetch(`${PB_URL}/api/collections/${COLLECTION}/records/${recordId}`, {
-    method: "PATCH", headers: { Authorization: TOKEN }, body: fd,
-  });
-  if (!r.ok) throw new Error(`addFile ${filename}: ${r.status} ${await r.text()}`);
-  const updated = await r.json();
-  const actualName = (updated.files ?? []).find(f => !filesBefore.has(f)) ?? filename;
-  return { updated, actualName };
+  fd.append("files+", new Blob([readFileSync(filePath)], { type: "video/mp4" }), name);
+  const updated = await api("PATCH", `collections/${COLLECTION}/records/${recordId}`, fd, true);
+  return (updated.files ?? []).find(f => !filesBefore.has(f)) ?? name;
 }
 
-async function removeFile(recordId, filename) {
+async function removeFile(recordId, name) {
   const fd = new FormData();
-  fd.append("files-", filename);
-  const r = await fetch(`${PB_URL}/api/collections/${COLLECTION}/records/${recordId}`, {
-    method: "PATCH", headers: { Authorization: TOKEN }, body: fd,
-  });
-  if (!r.ok) throw new Error(`removeFile ${filename}: ${r.status}`);
+  fd.append("files-", name);
+  await api("PATCH", `collections/${COLLECTION}/records/${recordId}`, fd, true);
 }
 
-async function updateJson(recordId, newJson) {
-  const r = await fetch(`${PB_URL}/api/collections/${COLLECTION}/records/${recordId}`, {
-    method: "PATCH",
-    headers: { Authorization: TOKEN, "Content-Type": "application/json" },
-    body: JSON.stringify({ json: newJson }),
-  });
-  if (!r.ok) throw new Error(`updateJson: ${r.status} ${await r.text()}`);
-}
-
-// ── ffprobe: codec del primer stream de video ─────────────────────────────
-function getVideoCodec(filePath) {
-  try {
-    const r = spawnSync("ffprobe", [
-      "-v", "error",
-      "-select_streams", "v:0",
-      "-show_entries", "stream=codec_name",
-      "-of", "csv=p=0",
-      filePath,
-    ], { encoding: "utf-8", timeout: 30000 });
-    if (r.status !== 0) return null;
-    return (r.stdout ?? "").trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-// ── Detecta si un video necesita conversión ───────────────────────────────
-function needsConversion(filePath) {
-  const ext = extname(filePath).replace(".", "").toLowerCase();
-  const extBad = BAD_EXTS.has(ext);
-
-  if (extBad) {
-    return { needs: true, reason: `ext=${ext}` };
-  }
-
-  // Si ya es .mp4/.m4v, ffprobe para confirmar el codec
-  const codec = getVideoCodec(filePath);
-  const codecBad = BAD_CODECS.has(codec ?? "");
-  return {
-    needs: codecBad,
-    reason: codecBad ? `codec=${codec}` : `codec=${codec ?? "?"} (ok)`,
-  };
-}
-
-// ── ffmpeg: H.264 + AAC, optimizado para web ─────────────────────────────
-function convert(inputPath, outputPath) {
-  const r = spawnSync("ffmpeg", [
-    "-y",
-    "-i", inputPath,
-    "-vcodec", "libx264",
-    "-preset", "fast",
-    "-crf", "22",
-    "-acodec", "aac",
-    "-movflags", "+faststart",
-    outputPath,
-  ], { stdio: "inherit", timeout: 3600000 }); // 1h max por video
-  if (r.status !== 0) throw new Error(`ffmpeg exit code ${r.status}`);
-}
-
-// ── Gitignore: asegurar que _logs/ esté excluido ──────────────────────────
-function ensureGitignoreExcludesLogs() {
-  const giPath = join(SCRIPT_DIR, "..", ".gitignore");
-  const content = existsSync(giPath) ? readFileSync(giPath, "utf-8") : "";
-  if (!content.includes("_logs/")) {
-    const newContent = content.trimEnd() + "\n\n# Conversion logs\n_logs/\n";
-    writeFileSync(giPath, newContent, "utf-8");
-    log("📝 .gitignore actualizado: se agregó _logs/");
-  }
-}
+const updateJson = (id, json) => api("PATCH", `collections/${COLLECTION}/records/${id}`, { json });
 
 // ── Main ──────────────────────────────────────────────────────────────────
-(async () => {
-  const startTime = Date.now();
+async function main() {
+  log("=== INICIO ===");
 
-  // Header
-  console.clear();
-  console.log("🎬 CONVERT_VIDEOS.mjs — Fix masivo de vídeos");
-  console.log("────────────────────────────────────────────\n");
+  const all = await getAll();
+  const courses = all.filter(r => !r.json?.type || r.json.type === "course");
+  log(`Cursos: ${courses.length}`);
 
-  logSection("INICIO");
-  log(`PB_URL:     ${PB_URL}`);
-  log(`Colección:  ${COLLECTION}`);
-  log(`Tmp dir:    ${TMP_DIR}`);
-
-  // Prep directorios
-  if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true });
-  mkdirSync(TMP_DIR, { recursive: true });
-
-  // Asegurar gitignore
-  ensureGitignoreExcludesLogs();
-
-  // Obtener cursos
-  logSection("OBTENIENDO CURSOS DE POCKETBASE");
-  let all;
-  try {
-    all = await getAll();
-  } catch (e) {
-    logError(`No se pudieron obtener los cursos: ${e.message}`);
-    flushLog();
-    console.log(`\n❌ Error fatal. Log disponible en:\n  ${LOG_FILE}`);
-    process.exit(1);
-  }
-
-  const courses = all.filter(r => r.json && (!r.json.type || r.json.type === "course"));
-  log(`Cursos encontrados: ${courses.length}`);
-
-  // Stats
-  const stats = { reencoded: 0, skipped: 0, errors: 0, total: 0 };
-  const errors = []; // [{course, video, step, error}]
+  let converted = 0;
 
   for (const course of courses) {
-    const videos = course.json?.videos ?? [];
+    const videos = (course.json?.videos ?? []).slice().sort((a, b) => a.order - b.order);
     if (!videos.length) continue;
 
-    logSection(`CURSO: ${course.title} (${videos.length} vídeos)`);
+    log(`\n=== ${course.title} (${videos.length} vídeos) ===`);
 
     for (const video of videos) {
-      stats.total++;
-      const inputPath  = join(TMP_DIR, video.file);
-      const baseName    = video.file.replace(/\.[^.]+$/, "");
-      const outputName  = `${baseName}_h264.mp4`;
-      const outputPath  = join(TMP_DIR, outputName);
+      log(`\n--- ${video.name}  |  ${video.file} ---`);
+
+      const inputPath  = join(TMP, video.file);
+      const outputName = video.file.replace(/\.[^.]+$/, "") + "_conv.mp4";
+      const outputPath = join(TMP, outputName);
 
       // 1. Descargar
-      process.stdout.write(`  ⬇ ${video.name} (${video.file})… `);
-      log(`[${stats.total}] Descargando: ${video.file} (${video.name})`);
-      try {
-        await downloadFile(course.id, video.file, inputPath);
-        console.log("✓");
-      } catch (err) {
-        console.log(`❌`);
-        logError(`Descarga falló: ${err.message}`);
-        errors.push({ course: course.title, video: video.file, step: "download", error: err.message });
-        stats.errors++;
-        continue;
-      }
+      log("Descargando...");
+      const r = await fetch(`${PB_URL}/api/files/${COLLECTION}/${course.id}/${video.file}`, {
+        headers: { Authorization: TOKEN },
+      });
+      if (!r.ok) throw new Error(`download ${video.file} → HTTP ${r.status}`);
+      await writeFile(inputPath, Buffer.from(await r.arrayBuffer()));
+      log(`OK (${(readFileSync(inputPath).length / 1024 / 1024).toFixed(1)} MB)`);
 
-      // 2. Detectar si necesita conversión
-      let needsConv;
-      try {
-        needsConv = needsConversion(inputPath);
-      } catch (e) {
-        logError(`ffprobe falló en ${video.file}: ${e.message}`);
-        errors.push({ course: course.title, video: video.file, step: "probe", error: e.message });
-        rmSync(inputPath, { force: true });
-        stats.errors++;
-        continue;
-      }
+      // 2. Convertir
+      log("Convirtiendo con ffmpeg...");
+      const ff = spawnSync("ffmpeg", [
+        "-y",
+        "-i", inputPath,
+        "-c:v", "libx264",
+        "-profile:v", "main",
+        "-pix_fmt", "yuv420p",
+        "-preset", "medium",
+        "-crf", "23",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        outputPath,
+      ], { stdio: ["ignore", "pipe", "pipe"] });
 
-      if (!needsConv.needs) {
-        console.log(`  ✓ ya está OK (${needsConv.reason}), skip`);
-        log(`  Skip — ya OK: ${needsConv.reason}`);
-        rmSync(inputPath, { force: true });
-        stats.skipped++;
-        continue;
+      if (ff.status !== 0) {
+        log(`FFMPEG SALIÓ CON CÓDIGO ${ff.status}`);
+        log(`STDERR:\n${ff.stderr?.toString()}`);
+        throw new Error(`ffmpeg falló en ${course.title} / ${video.name}`);
       }
-      console.log(`  🔄 Problema detectado: ${needsConv.reason}, convirtiendo…`);
-      log(`  Conversión necesaria: ${needsConv.reason}`);
+      log(`OK (${(readFileSync(outputPath).length / 1024 / 1024).toFixed(1)} MB)`);
 
-      // 3. Convertir
-      try {
-        convert(inputPath, outputPath);
-        log(`  Re-encoding OK`);
-      } catch (err) {
-        logError(`ffmpeg falló: ${err.message}`);
-        errors.push({ course: course.title, video: video.file, step: "convert", error: err.message });
-        rmSync(inputPath, { force: true });
-        stats.errors++;
-        continue;
-      }
+      // 3. Subir
+      log(`Subiendo ${outputName}...`);
+      const actualName = await addFile(course.id, outputPath, outputName);
+      log(`Guardado como: ${actualName}`);
 
-      // 4. Subir
-      log(`  Subiendo: ${outputName}`);
-      let actualName;
-      try {
-        const res = await addFile(course.id, outputPath, outputName);
-        actualName = res.actualName;
-        log(`  Guardado como: ${actualName}`);
-      } catch (err) {
-        logError(`Upload falló: ${err.message}`);
-        errors.push({ course: course.title, video: video.file, step: "upload", error: err.message });
-        rmSync(inputPath, { force: true });
-        rmSync(outputPath, { force: true });
-        stats.errors++;
-        continue;
-      }
+      // 4. Actualizar json.videos
+      const latest = await getRecord(course.id);
+      const updatedVideos = (latest.json?.videos ?? []).map(v =>
+        v.file === video.file ? { ...v, file: actualName } : v
+      );
+      await updateJson(course.id, { ...latest.json, videos: updatedVideos });
+      log("json.videos actualizado");
 
-      // 5. Actualizar json.videos (mismo orden, mismo nombre, solo cambia file)
-      let jsonOk = true;
-      try {
-        const latest = await getRecord(course.id);
-        const updatedVideos = (latest.json?.videos ?? []).map(v2 =>
-          v2.file === video.file ? { ...v2, file: actualName } : v2
-        );
-        await updateJson(course.id, { ...latest.json, videos: updatedVideos });
-        log(`  json.videos actualizado`);
-      } catch (err) {
-        jsonOk = false;
-        stats.errors++;
-        logError(`Update json falló: ${err.message}`);
-        errors.push({ course: course.title, video: video.file, step: "update-json", error: err.message });
-        // Continuar igual — el archivo ya está subido, se puede reparar a mano
-      }
+      // 5. Borrar el viejo
+      log(`Borrando ${video.file}...`);
+      await removeFile(course.id, video.file);
+      log("OK");
 
-      // 6. Borrar el archivo viejo
-      let removeOk = true;
-      try {
-        await removeFile(course.id, video.file);
-        log(`  Archivo original eliminado: ${video.file}`);
-      } catch (err) {
-        removeOk = false;
-        stats.errors++;
-        logError(`No se pudo borrar archivo original ${video.file}: ${err.message}`);
-        errors.push({ course: course.title, video: video.file, step: "remove-old", error: err.message });
-      }
-
-      // Limpiar temporales
-      rmSync(inputPath, { force: true });
+      // Cleanup local
+      rmSync(inputPath,  { force: true });
       rmSync(outputPath, { force: true });
 
-      // Solo contar como re-encoded si TODO el ciclo pasó OK
-      if (jsonOk && removeOk) {
-        stats.reencoded++;
-        console.log(`  ✅ Listo`);
-        log(`  ✅ Completado\n`);
-      } else {
-        // jsonOk/removeOk falló, pero ya incrementamos errors en cada catch.
-        // Acá solo logueamos el estado final del video.
-        console.log(`  ⚠️  Completado con errores parciales (ver log)`);
-        log(`  ⚠️  Completado con errores parciales\n`);
-      }
+      converted++;
+      log("✅ Listo");
     }
   }
 
-  // Limpieza final
-  rmSync(TMP_DIR, { recursive: true, force: true });
+  rmSync(TMP, { recursive: true, force: true });
+  log(`\n=== FIN ===`);
+  log(`Convertidos: ${converted}`);
+  log(`Log: ${logFile}`);
+}
 
-  // ── Resumen ─────────────────────────────────────────────────────────────
-  const elapsed = Math.round((Date.now() - startTime) / 1000);
-  const elapsedStr = elapsed >= 60
-    ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`
-    : `${elapsed}s`;
-
-  logSection("RESULTADO FINAL");
-  log(`Total procesados:  ${stats.total}`);
-  log(`Re-encoded:        ${stats.reencoded}`);
-  log(`Skipped (ya OK):   ${stats.skipped}`);
-  log(`Errores:          ${stats.errors}`);
-  log(`Duración:          ${elapsedStr}`);
-
-  if (errors.length > 0) {
-    logSection("ERRORES DETALLADOS");
-    errors.forEach((e, i) => {
-      log(`[${i + 1}] Curso: ${e.course}`);
-      log(`    Video: ${e.video}`);
-      log(`    Paso:  ${e.step}`);
-      log(`    Error: ${e.error}\n`);
-    });
-  }
-
-  // Guardar log
-  flushLog();
-
-  // Mostrar resultado
-  console.log(`\n────────────────────────────────────────────`);
-  console.log(`  Re-encoded:  ${stats.reencoded}`);
-  console.log(`  Skipped:     ${stats.skipped}`);
-  if (stats.errors > 0) {
-    console.log(`  Errores:     ${stats.errors}  ← ver log abajo`);
-  }
-  console.log(`  Duración:    ${elapsedStr}`);
-  console.log(`────────────────────────────────────────────`);
-
-  if (stats.errors > 0) {
-    console.log(`\n⚠  Hubo ${stats.errors} error(es). Leé el log para detalles:\n`);
-    console.log(`   ${LOG_FILE}\n`);
-  } else {
-    console.log(`\n✅ Todo listo. Log guardado en:\n`);
-    console.log(`   ${LOG_FILE}\n`);
-  }
-
-  // Limpiar lineas del log en memoria (ya fue a disco)
-  LOG_LINES.length = 0;
-})();
+main().catch(err => {
+  log(`\n❌ ERROR: ${err.message}`);
+  log(`Stack: ${err.stack}`);
+  log(`Log completo: ${logFile}`);
+  process.exit(1);
+});
