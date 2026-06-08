@@ -16,7 +16,7 @@ import { execSync } from "child_process";
 import { extname, join } from "path";
 
 // ── .env ──────────────────────────────────────────────────────────────────
-const envPath = new URL("./.env", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const envPath = new URL("../.env", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 if (!existsSync(envPath)) { console.error("No se encontró .env"); process.exit(1); }
 const env = Object.fromEntries(
   readFileSync(envPath, "utf-8").split("\n")
@@ -34,7 +34,7 @@ catch { console.error("ffmpeg no encontrado. Instalalo y volvé a correr."); pro
 try { execSync("ffprobe -version", { stdio: "ignore" }); }
 catch { console.error("ffprobe no encontrado. Instalalo y volvé a correr."); process.exit(1); }
 
-const TMP = join(process.cwd(), "_convert_tmp");
+const TMP = join(import.meta.dirname, "_convert_tmp");
 
 // ── API PocketBase ────────────────────────────────────────────────────────
 async function getAll() {
