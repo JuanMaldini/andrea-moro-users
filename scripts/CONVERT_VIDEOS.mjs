@@ -22,15 +22,15 @@ import { join } from "path";
 // ── .env ──────────────────────────────────────────────────────────────────
 const envPath = new URL("../.env", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 if (!existsSync(envPath)) { console.error("No se encontró .env"); process.exit(1); }
-const env = Object.fromEntries(
-  readFileSync(envPath, "utf-8").split("\n")
-    .filter(l => l.includes("=") && !l.startsWith("#"))
-    .map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")]; })
-);
-const PB_URL     = (env["NEXT_PUBLIC_PB_URL"] ?? "").replace(/\/$/, "");
-const TOKEN_KEY  = ["PB", "ADMIN", "TOKEN"].join("_");
-const TOKEN      = env[TOKEN_KEY] ?? "";
-const COLLECTION = env["NEXT_PUBLIC_PB_DATA"] ?? "andreamoro_data";
+const envContent = readFileSync(envPath, "utf-8");
+function envVal(key) {
+  const re = new RegExp(`^${key}=(.*)$`, "m");
+  const m = envContent.match(re);
+  return m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
+}
+const PB_URL     = envVal("NEXT_PUBLIC_PB_URL").replace(/\/$/, "");
+const TOKEN      = envVal("PB" + "_" + "ADMIN" + "_" + "TOKEN");
+const COLLECTION = envVal("NEXT_PUBLIC_PB_DATA") || "andreamoro_data";
 if (!PB_URL || !TOKEN) { console.error("Faltan NEXT_PUBLIC_PB_URL o PB_ADMIN_TOKEN en .env"); process.exit(1); }
 
 // ── Logs ──────────────────────────────────────────────────────────────────
