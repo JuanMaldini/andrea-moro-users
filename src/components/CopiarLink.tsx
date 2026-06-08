@@ -24,7 +24,7 @@ export default function CopiarLink({ url }: Props) {
   function handleWhatsApp(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const message = `${url}\n${COURSE_PASSWORD}`;
+    const message = `${url}\nCLAVE: ${COURSE_PASSWORD}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   }
 
