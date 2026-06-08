@@ -38,3 +38,6 @@ pnpm-debug.log*
 # Lockfiles alternativos — solo usamos pnpm-lock.yaml
 package-lock.json
 yarn.lock
+
+# Conversion logs
+_logs/
