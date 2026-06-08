@@ -3,12 +3,15 @@
  *
  * Recorre los vídeos de cada curso, los descarga, los re-encodea con
  * ffmpeg a H.264 (main profile, yuv420p) + AAC en MP4 con faststart, y
- * los sube reemplazando al original. Si algo falla, loguea y corta.
+ * los sube reemplazando al original.
+ *
+ * - NO detecta codec: siempre re-encodea.
+ * - NO cambia resolución.
+ * - SKIP (con log) archivos que no son video o que no existen (404).
+ * - CORTA si falla ffmpeg, la red, o la API.
  *
  * Requiere: ffmpeg en PATH.
- * Ejecutar: doble click en CONVERT_VIDEOS.bat  (o  node scripts/CONVERT_VIDEOS.mjs)
- *
- * No detecta codec: siempre re-encodea. No cambia resolución.
+ * Ejecutar: doble click en CONVERT_VIDEOS.bat
  */
 
 import { readFileSync, mkdirSync, rmSync, existsSync, writeFileSync, appendFileSync } from "fs";
@@ -25,7 +28,7 @@ const env = Object.fromEntries(
     .map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")]; })
 );
 const PB_URL     = (env["NEXT_PUBLIC_PB_URL"] ?? "").replace(/\/$/, "");
-const TOKEN      = env["PB_ADMIN_TOKEN"] ?? "";
+const TOKEN      = ***"PB_ADMIN_TOKEN"] ?? "";
 const COLLECTION = env["NEXT_PUBLIC_PB_DATA"] ?? "andreamoro_data";
 if (!PB_URL || !TOKEN) { console.error("Faltan NEXT_PUBLIC_PB_URL o PB_ADMIN_TOKEN en .env"); process.exit(1); }
 
@@ -47,6 +50,9 @@ catch { log("ffmpeg no encontrado. Instalalo y volvé a correr."); process.exit(
 
 const TMP = join(import.meta.dirname, "_tmp");
 mkdirSync(TMP, { recursive: true });
+
+// Extensiones que SÍ se procesan
+const VIDEO_EXT = /\.(mp4|mov|m4v|avi|mkv|webm|flv|wmv)$/i;
 
 // ── API PocketBase ────────────────────────────────────────────────────────
 async function api(method, path, body, isForm) {
@@ -89,7 +95,7 @@ async function main() {
   const courses = all.filter(r => !r.json?.type || r.json.type === "course");
   log(`Cursos: ${courses.length}`);
 
-  let converted = 0;
+  let converted = 0, skipped = 0;
 
   for (const course of courses) {
     const videos = (course.json?.videos ?? []).slice().sort((a, b) => a.order - b.order);
@@ -100,6 +106,13 @@ async function main() {
     for (const video of videos) {
       log(`\n--- ${video.name}  |  ${video.file} ---`);
 
+      // SKIP: no es video
+      if (!VIDEO_EXT.test(video.file)) {
+        log(`SKIP: no es un video (extensión no reconocida)`);
+        skipped++;
+        continue;
+      }
+
       const inputPath  = join(TMP, video.file);
       const outputName = video.file.replace(/\.[^.]+$/, "") + "_conv.mp4";
       const outputPath = join(TMP, outputName);
@@ -109,6 +122,11 @@ async function main() {
       const r = await fetch(`${PB_URL}/api/files/${COLLECTION}/${course.id}/${video.file}`, {
         headers: { Authorization: TOKEN },
       });
+      if (r.status === 404) {
+        log(`SKIP: archivo no existe en PocketBase (404)`);
+        skipped++;
+        continue;
+      }
       if (!r.ok) throw new Error(`download ${video.file} → HTTP ${r.status}`);
       await writeFile(inputPath, Buffer.from(await r.arrayBuffer()));
       log(`OK (${(readFileSync(inputPath).length / 1024 / 1024).toFixed(1)} MB)`);
@@ -166,6 +184,7 @@ async function main() {
   rmSync(TMP, { recursive: true, force: true });
   log(`\n=== FIN ===`);
   log(`Convertidos: ${converted}`);
+  log(`Skipped:     ${skipped}`);
   log(`Log: ${logFile}`);
 }
 
