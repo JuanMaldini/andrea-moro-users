@@ -57,7 +57,7 @@ export default function CoursePageClient({
   function handleAccessSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (clave.trim() === COURSE_PASSWORD) {
+    if (clave.trim().toLowerCase() === COURSE_PASSWORD.toLowerCase()) {
       try { sessionStorage.setItem(sessionKey, JSON.stringify({ validated: true })); } catch { /* */ }
       setState("videos");
     } else {
