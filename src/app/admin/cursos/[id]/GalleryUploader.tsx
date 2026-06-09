@@ -53,6 +53,18 @@ export default function GalleryUploader({ courseId, course, gallery, onGalleryCh
 
     let current = [...photos];
     try {
+      // Refresca el baseline con TODOS los archivos actuales del record antes de
+      // empezar. Sin esto, si en la misma sesión se subió un vídeo después de
+      // montar el componente, el diff lo tomaría como "archivo nuevo" y un vídeo
+      // se colaría en la galería de fotos. Leerlo fresco evita ese cruce.
+      try {
+        const pb = getPocketBase();
+        const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(courseId);
+        knownFiles.current = latest.files ?? knownFiles.current;
+      } catch {
+        /* si falla, seguimos con el baseline que teníamos */
+      }
+
       for (let i = 0; i < selected.length; i++) {
         const file = selected[i];
         // Sube al campo único `files` (files+ → no pisa vídeos ni otras fotos).

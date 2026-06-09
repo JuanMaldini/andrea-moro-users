@@ -5,7 +5,11 @@
  * ffmpeg a H.264 (main profile, yuv420p) + AAC en MP4 con faststart, y
  * los sube reemplazando al original.
  *
- * - NO detecta codec: siempre re-encodea.
+ * - DETECTA codec con ffprobe SOBRE EL REMOTO: solo descarga si hace falta.
+ *     · h264/aac en .mp4      → SKIP (no baja nada).
+ *     · h264/aac en .mov/etc  → REMUX a mp4 (copia streams, sin re-encode).
+ *     · codec raro            → ENCODE (re-encodea de verdad).
+ *   Audio ausente cuenta como válido. Idempotente.
  * - NO cambia resolución.
  * - SKIP (con log) archivos que no son video o que no existen (404).
  * - CORTA si falla ffmpeg, la red, o la API.
@@ -45,9 +49,11 @@ function log(msg) {
   process.stdout.write(line);
 }
 
-// ── Chequeo ffmpeg ────────────────────────────────────────────────────────
+// ── Chequeo ffmpeg/ffprobe ────────────────────────────────────────────────
 try { execSync("ffmpeg -version", { stdio: "ignore" }); }
 catch { log("ffmpeg no encontrado. Instalalo y volvé a correr."); process.exit(1); }
+try { execSync("ffprobe -version", { stdio: "ignore" }); }
+catch { log("ffprobe no encontrado (viene con ffmpeg). Reinstalá ffmpeg."); process.exit(1); }
 
 const TMP = join(import.meta.dirname, "_tmp");
 mkdirSync(TMP, { recursive: true });
@@ -88,6 +94,43 @@ async function removeFile(recordId, name) {
 
 const updateJson = (id, json) => api("PATCH", `collections/${COLLECTION}/records/${id}`, { json });
 
+// ── Detección de codecs ─────────────────────────────────────────────────────
+// Corre ffprobe (sirve tanto para una ruta local como para una URL http).
+// Para URLs protegidas de PocketBase pasamos el header Authorization.
+function probeStream(input, kind, extraArgs = []) {
+  const r = spawnSync("ffprobe", [
+    "-v", "error",
+    ...extraArgs,
+    "-select_streams", kind === "video" ? "v:0" : "a:0",
+    "-show_entries", "stream=codec_name",
+    "-of", "default=nw=1:nk=1",
+    input,
+  ]);
+  return (r.stdout?.toString() || "").trim();
+}
+
+// Devuelve { vCodec, aCodec } de un input (local o URL).
+function probeCodecs(input, isUrl) {
+  const extra = isUrl ? ["-headers", `Authorization: ${TOKEN}\r\n`] : [];
+  return {
+    vCodec: probeStream(input, "video", extra),
+    aCodec: probeStream(input, "audio", extra),
+  };
+}
+
+// Decide qué hacer según codecs + contenedor.
+//   "skip"    → ya está perfecto (h264/aac en .mp4), no se toca.
+//   "remux"   → codecs OK pero contenedor no-mp4: copia sin re-encodear.
+//   "encode"  → codec raro: hay que re-encodear de verdad.
+// Audio ausente cuenta como válido (un video sin pista de audio está bien).
+function decideAction(vCodec, aCodec, fileName) {
+  const isMp4 = /\.mp4$/i.test(fileName);
+  const videoOk = vCodec === "h264";
+  const audioOk = aCodec === "" || aCodec === "aac";
+  if (videoOk && audioOk) return isMp4 ? "skip" : "remux";
+  return "encode";
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────
 async function main() {
   log("=== INICIO ===");
@@ -114,15 +157,35 @@ async function main() {
         continue;
       }
 
+      const fileUrl = `${PB_URL}/api/files/${COLLECTION}/${course.id}/${video.file}`;
+
+      // 1. Probar codecs SOBRE EL REMOTO (sin bajar el archivo entero).
+      //    Así solo descargamos los que de verdad hay que tocar.
+      log("Probando codecs en remoto con ffprobe...");
+      const { vCodec, aCodec } = probeCodecs(fileUrl, true);
+      log(`Codecs detectados → video: ${vCodec || "—"}, audio: ${aCodec || "—"}`);
+
+      if (!vCodec) {
+        // ffprobe no devolvió codec de video: o no existe (404) o no es video.
+        log(`SKIP: no se pudo leer stream de video (¿404 o no es video?)`);
+        skipped++;
+        continue;
+      }
+
+      const action = decideAction(vCodec, aCodec, video.file);
+      if (action === "skip") {
+        log(`SKIP: ya está en H.264/AAC dentro de .mp4, no hace falta tocarlo`);
+        skipped++;
+        continue;
+      }
+
       const inputPath  = join(TMP, video.file);
-      const outputName = video.file.replace(/\.[^.]+$/, "") + "_conv.mp4";
+      const outputName = video.file.replace(/(_conv)*\.[^.]+$/, "") + "_conv.mp4";
       const outputPath = join(TMP, outputName);
 
-      // 1. Descargar
-      log("Descargando...");
-      const r = await fetch(`${PB_URL}/api/files/${COLLECTION}/${course.id}/${video.file}`, {
-        headers: { Authorization: TOKEN },
-      });
+      // 2. Ahora SÍ descargamos (porque hay que convertir o remuxear).
+      log(`Hace falta ${action === "remux" ? "remux a mp4 (sin re-encode)" : "re-encode"}. Descargando...`);
+      const r = await fetch(fileUrl, { headers: { Authorization: TOKEN } });
       if (r.status === 404) {
         log(`SKIP: archivo no existe en PocketBase (404)`);
         skipped++;
@@ -132,21 +195,16 @@ async function main() {
       await writeFile(inputPath, Buffer.from(await r.arrayBuffer()));
       log(`OK (${(readFileSync(inputPath).length / 1024 / 1024).toFixed(1)} MB)`);
 
-      // 2. Convertir
-      log("Convirtiendo con ffmpeg...");
-      const ff = spawnSync("ffmpeg", [
-        "-y",
-        "-i", inputPath,
-        "-c:v", "libx264",
-        "-profile:v", "main",
-        "-pix_fmt", "yuv420p",
-        "-preset", "medium",
-        "-crf", "23",
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-movflags", "+faststart",
-        outputPath,
-      ], { stdio: ["ignore", "pipe", "pipe"] });
+      // 3. Convertir (o remuxear copiando streams).
+      const ffArgs = action === "remux"
+        ? ["-y", "-i", inputPath, "-c", "copy", "-movflags", "+faststart", outputPath]
+        : ["-y", "-i", inputPath,
+           "-c:v", "libx264", "-profile:v", "main", "-pix_fmt", "yuv420p",
+           "-preset", "medium", "-crf", "23",
+           "-c:a", "aac", "-b:a", "128k",
+           "-movflags", "+faststart", outputPath];
+      log(`${action === "remux" ? "Remuxeando" : "Convirtiendo"} con ffmpeg...`);
+      const ff = spawnSync("ffmpeg", ffArgs, { stdio: ["ignore", "pipe", "pipe"] });
 
       if (ff.status !== 0) {
         log(`FFMPEG SALIÓ CON CÓDIGO ${ff.status}`);

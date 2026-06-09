@@ -137,6 +137,20 @@ export default function VideoUploader({ courseId, slug, videos, onVideosChange }
     setUploading(true);
     let newVideos = [...localVideos];
 
+    // Baseline = TODOS los archivos del record (vídeos + fotos de galería + lo
+    // que haya), no solo los vídeos. Si usáramos solo los vídeos, el diff
+    // agarraría una foto de la galería como si fuera el vídeo recién subido y
+    // se colaría una imagen en el listado de vídeos. Lo leemos fresco del
+    // server para no depender del orden en que se subieron fotos/vídeos.
+    const knownFiles = new Set<string>();
+    try {
+      const rec = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(courseId);
+      (rec.files ?? []).forEach((f) => knownFiles.add(f));
+    } catch {
+      // Fallback: al menos los vídeos que conocemos.
+      newVideos.forEach((v) => knownFiles.add(v.file));
+    }
+
     for (let i = 0; i < items.length; i++) {
       setUploadItems((prev) =>
         prev.map((it, idx) => (idx === i ? { ...it, status: "uploading", progress: 0 } : it))
@@ -145,17 +159,17 @@ export default function VideoUploader({ courseId, slug, videos, onVideosChange }
       const type = normalizeVideoType(item.file);
       const renamed = new File([item.file], item.newName, { type });
       try {
-        const filesBefore = new Set(newVideos.map((v) => v.file));
-
         const updatedRecord = await uploadWithProgress<CourseRecord>(courseId, "files", [renamed], (pct) => {
           setUploadItems((prev) =>
             prev.map((it, idx) => (idx === i ? { ...it, progress: pct } : it))
           );
         });
 
-        // Nombre real que asignó PocketBase (puede añadir sufijo aleatorio)
+        // Nombre real que asignó PocketBase (puede añadir sufijo aleatorio):
+        // el único archivo de `files` que no estaba antes en el baseline.
         const actualFilename =
-          updatedRecord.files?.find((f) => !filesBefore.has(f)) ?? item.newName;
+          updatedRecord.files?.find((f) => !knownFiles.has(f)) ?? item.newName;
+        knownFiles.add(actualFilename); // mantener baseline al día para el próximo item
 
         const order = newVideos.length + 1;
         newVideos = [

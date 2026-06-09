@@ -75,6 +75,18 @@ async function api(method, path, body, isForm) {
 const slugUnderscored = COURSE_SLUG.replace(/-/g, "_");
 const VIDEO_EXT = /\.(mp4|mov|m4v|avi|mkv|webm)$/i;
 
+// Lee el codec del primer stream de video/audio de un archivo local.
+function probeStream(input, kind) {
+  const r = spawnSync("ffprobe", [
+    "-v", "error",
+    "-select_streams", kind === "video" ? "v:0" : "a:0",
+    "-show_entries", "stream=codec_name",
+    "-of", "default=nw=1:nk=1",
+    input,
+  ]);
+  return (r.stdout?.toString() || "").trim();
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 async function main() {
   log("=== UPLOAD BATCH ===");
@@ -104,16 +116,23 @@ async function main() {
 
     log(`\n[${order}/${files.length}] ${files[i]}`);
 
-    // 3a. ffmpeg
-    log("Convirtiendo...");
-    const ff = spawnSync("ffmpeg", [
-      "-y", "-i", src,
-      "-c:v", "libx264", "-profile:v", "main", "-pix_fmt", "yuv420p",
-      "-preset", "medium", "-crf", "23",
-      "-c:a", "aac", "-b:a", "128k",
-      "-movflags", "+faststart",
-      tmp,
-    ], { stdio: ["ignore", "pipe", "pipe"] });
+    // 3a. Probar codecs del archivo local: solo re-encodeamos si hace falta.
+    const vCodec = probeStream(src, "video");
+    const aCodec = probeStream(src, "audio");
+    const isMp4 = /\.mp4$/i.test(files[i]);
+    const codecsOk = vCodec === "h264" && (aCodec === "" || aCodec === "aac");
+    const mode = codecsOk ? (isMp4 ? "copy" : "remux") : "encode";
+    log(`Codecs → video: ${vCodec || "—"}, audio: ${aCodec || "—"}  ⇒ ${mode}`);
+
+    const ffArgs = mode === "encode"
+      ? ["-y", "-i", src,
+         "-c:v", "libx264", "-profile:v", "main", "-pix_fmt", "yuv420p",
+         "-preset", "medium", "-crf", "23",
+         "-c:a", "aac", "-b:a", "128k",
+         "-movflags", "+faststart", tmp]
+      : ["-y", "-i", src, "-c", "copy", "-movflags", "+faststart", tmp];
+    log(mode === "encode" ? "Convirtiendo..." : "Empaquetando a mp4 (sin re-encode)...");
+    const ff = spawnSync("ffmpeg", ffArgs, { stdio: ["ignore", "pipe", "pipe"] });
     if (ff.status !== 0) {
       log(`FFMPEG FALLO: ${ff.stderr?.toString()}`);
       throw new Error(`ffmpeg en ${files[i]}`);
