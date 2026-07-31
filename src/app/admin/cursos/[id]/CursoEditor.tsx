@@ -7,8 +7,10 @@ import { COURSE_PASSWORD } from "@/lib/auth";
 import {
   type CourseRecord,
   type CourseVideo,
+  type CourseResource,
 } from "@/lib/course-utils";
 import VideoUploader from "./VideoUploader";
+import ResourcesUploader from "./ResourcesUploader";
 import GalleryUploader from "./GalleryUploader";
 
 interface Props {
@@ -32,13 +34,20 @@ export default function CursoEditor({ course }: Props) {
 
   const [title, setTitle] = useState(course.title);
   const [description, setDescription] = useState(course.description);
-  const [price, setPrice] = useState<number>(course.price ?? 0);
+  // El precio se edita como TEXTO para poder dejar la casilla vacía mientras se
+  // escribe. El valor numérico real solo se confirma al salir del campo o con
+  // Enter (ver commitPrice) — así se pueden borrar todos los dígitos sin que
+  // reaparezca un 0 y sin guardar estados intermedios.
+  const [priceInput, setPriceInput] = useState<string>(String(course.price ?? 0));
   const [slug, setSlug] = useState(course.json?.slug ?? course.id);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [passCopied, setPassCopied] = useState(false);
 
   // Videos
   const [videos, setVideos] = useState<CourseVideo[]>(course.json?.videos ?? []);
+
+  // Resources
+  const [resources, setResources] = useState<CourseResource[]>(course.json?.resources ?? []);
 
   // Gallery
   const [gallery, setGallery] = useState<string[]>(course.json?.gallery ?? []);
@@ -50,9 +59,10 @@ export default function CursoEditor({ course }: Props) {
   // Refs for debounced save
   const titleRef = useRef(title);
   const descriptionRef = useRef(description);
-  const priceRef = useRef(price);
+  const priceRef = useRef<number>(course.price ?? 0);
   const slugRef = useRef(slug);
   const videosRef = useRef<CourseVideo[]>(videos);
+  const resourcesRef = useRef<CourseResource[]>(resources);
   const galleryRef = useRef<string[]>(gallery);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -72,6 +82,7 @@ export default function CursoEditor({ course }: Props) {
           published: true,
           slug: slugRef.current,
           videos: videosRef.current,
+          resources: resourcesRef.current,
           gallery: galleryRef.current,
         },
       });
@@ -100,11 +111,27 @@ export default function CursoEditor({ course }: Props) {
     scheduleSave();
   }
 
-  function handlePriceChange(val: string) {
-    const n = parseInt(val, 10);
+  /** Mientras se escribe: solo se filtra a dígitos. No guarda, no normaliza. */
+  function handlePriceInput(val: string) {
+    setPriceInput(val.replace(/\D/g, ""));
+  }
+
+  /** Confirma el precio: al salir del campo (blur) o con Enter. Vacío = 0. */
+  function commitPrice() {
+    const n = parseInt(priceInput, 10);
     const safe = isNaN(n) ? 0 : Math.max(0, n);
-    setPrice(safe); priceRef.current = safe;
-    scheduleSave();
+    const normalized = String(safe); // quita ceros a la izquierda
+    setPriceInput(normalized);
+    if (safe === priceRef.current) return; // sin cambios → no guardar
+    priceRef.current = safe;
+    scheduleSave(0);
+  }
+
+  function handlePriceKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.currentTarget.blur(); // el blur dispara commitPrice
+    }
   }
 
   function handleCopyPass() {
@@ -119,6 +146,11 @@ export default function CursoEditor({ course }: Props) {
   function handleVideosChange(newVideos: CourseVideo[]) {
     setVideos(newVideos);
     videosRef.current = newVideos;
+  }
+
+  function handleResourcesChange(newResources: CourseResource[]) {
+    setResources(newResources);
+    resourcesRef.current = newResources;
   }
 
   function handleGalleryChange(newGallery: string[]) {
@@ -179,11 +211,13 @@ export default function CursoEditor({ course }: Props) {
             <div>
               <label className="block text-sm font-bold uppercase tracking-widest text-marron mb-3">Precio (ARS$)</label>
               <input
-                type="number"
-                min={0}
-                step={100}
-                value={price}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePriceChange(e.target.value)}
+                type="text"
+                inputMode="numeric"
+                value={priceInput}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handlePriceInput(e.target.value)}
+                onBlur={commitPrice}
+                onKeyDown={handlePriceKeyDown}
+                placeholder="0"
                 className="w-48 px-4 py-3 border-2 border-marron bg-vanilla text-base text-negro focus:outline-none focus:ring-2 focus:ring-marron transition-all"
               />
             </div>
@@ -210,6 +244,14 @@ export default function CursoEditor({ course }: Props) {
         slug={slugRef.current}
         videos={videos}
         onVideosChange={handleVideosChange}
+      />
+
+      {/* === Recursos === */}
+      <ResourcesUploader
+        courseId={course.id}
+        course={course}
+        resources={resources}
+        onResourcesChange={handleResourcesChange}
       />
 
       {/* === Galería === */}

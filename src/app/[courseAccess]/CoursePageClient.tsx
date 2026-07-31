@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import type { CourseVideo } from "@/lib/course-utils";
+import { resourceKind, type CourseVideo, type CourseResource } from "@/lib/course-utils";
 import { COURSE_PASSWORD } from "@/lib/auth";
 
 type State = "presentation" | "access" | "videos";
@@ -12,6 +12,7 @@ interface Props {
   title: string;
   description: string;
   videos: CourseVideo[];
+  resources: CourseResource[];
   pbUrl: string;
   collectionName: string;
   gallery: string[];
@@ -20,7 +21,7 @@ interface Props {
 const SESSION_KEY = "course_access_global";
 
 export default function CoursePageClient({
-  courseId, token, title, description, videos,
+  courseId, token, title, description, videos, resources,
   pbUrl, collectionName, gallery,
 }: Props) {
   const sessionKey = SESSION_KEY;
@@ -29,6 +30,7 @@ export default function CoursePageClient({
   const [error, setError] = useState("");
   const [modalVideo, setModalVideo] = useState<CourseVideo | null>(null);
   const [modalVideoError, setModalVideoError] = useState<string | null>(null);
+  const [previewResource, setPreviewResource] = useState<CourseResource | null>(null);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -43,7 +45,7 @@ export default function CoursePageClient({
   // Close modal on Escape
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") { setModalVideo(null); closeLightbox(); }
+      if (e.key === "Escape") { setModalVideo(null); setPreviewResource(null); closeLightbox(); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -79,6 +81,11 @@ export default function CoursePageClient({
 
   function fileUrl(filename: string) {
     return `${pbUrl}/api/files/${collectionName}/${courseId}/${filename}`;
+  }
+
+  // `?download=1` hace que PocketBase responda con Content-Disposition: attachment.
+  function downloadUrl(filename: string) {
+    return `${fileUrl(filename)}?download=1`;
   }
 
   return (
@@ -187,6 +194,60 @@ export default function CoursePageClient({
                 <p className="px-6 py-8 text-xs text-grisclarito text-center">Vídeos en preparación.</p>
               )}
             </div>
+
+            {/* RECURSOS — material de apoyo descargable */}
+            {resources.length > 0 && (
+              <div className="mt-10">
+                <p className="text-xs uppercase tracking-widest text-grisclarito mb-4">Recursos</p>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+                    gap: "6px",
+                  }}
+                >
+                  {resources.map((r) => {
+                    const kind = resourceKind(r.file);
+                    const ext = r.file.split(".").pop()?.toLowerCase() ?? "";
+
+                    return (
+                      <button
+                        key={r.file}
+                        onClick={() => setPreviewResource(r)}
+                        className="text-left focus:outline-none group"
+                      >
+                        <div className="aspect-square bg-grisoscuro overflow-hidden group-hover:shadow transition-shadow duration-150">
+                          {kind === "image" ? (
+                            <img
+                              src={fileUrl(r.file)}
+                              alt={r.name}
+                              draggable={false}
+                              className="w-full h-full object-cover select-none"
+                            />
+                          ) : kind === "video" ? (
+                            <video
+                              src={fileUrl(r.file)}
+                              className="w-full h-full object-cover"
+                              preload="metadata"
+                              playsInline
+                              muted
+                            />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center gap-1">
+                              <span className="text-3xl">{kind === "pdf" ? "📄" : "📎"}</span>
+                              <span className="text-[10px] text-grisclarito uppercase">.{ext}</span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs text-marroncalido mt-1 leading-snug break-words">
+                          {r.name}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -218,6 +279,84 @@ export default function CoursePageClient({
                 />
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de recurso — previsualización + botón de descarga al lado */}
+      {previewResource && (
+        <div
+          className="fixed inset-0 z-50 bg-negro/90 flex items-center justify-center px-4 py-8"
+          onClick={() => setPreviewResource(null)}
+        >
+          <div className="w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
+            {/* Cabecera: nombre + descargar + cerrar */}
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <p className="text-xs text-grisoscuro uppercase tracking-widest truncate flex-1">
+                {previewResource.name}
+              </p>
+              <a
+                href={downloadUrl(previewResource.file)}
+                download={previewResource.original}
+                className="flex-shrink-0 text-xs text-blanco bg-marron hover:bg-marroncalido px-4 py-2 uppercase tracking-widest transition-colors"
+              >
+                ↓ Descargar
+              </a>
+              <button
+                onClick={() => setPreviewResource(null)}
+                className="text-grisoscuro hover:text-blanco text-xl leading-none transition-colors flex-shrink-0"
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Previsualización según tipo */}
+            {(() => {
+              const kind = resourceKind(previewResource.file);
+              if (kind === "image") {
+                return (
+                  <img
+                    src={fileUrl(previewResource.file)}
+                    alt={previewResource.name}
+                    draggable={false}
+                    className="w-full max-h-[75vh] object-contain select-none"
+                  />
+                );
+              }
+              if (kind === "video") {
+                return (
+                  <video
+                    key={previewResource.file}
+                    src={fileUrl(previewResource.file)}
+                    controls
+                    autoPlay
+                    playsInline
+                    className="w-full aspect-video bg-negro block"
+                  />
+                );
+              }
+              if (kind === "pdf") {
+                return (
+                  <iframe
+                    key={previewResource.file}
+                    src={fileUrl(previewResource.file)}
+                    title={previewResource.name}
+                    className="w-full h-[75vh] bg-blanco block border-0"
+                  />
+                );
+              }
+              return (
+                <div className="bg-blanco px-6 py-10 text-center">
+                  <p className="text-sm text-marroncalido">
+                    Este archivo no se puede previsualizar. Usá el botón de descarga.
+                  </p>
+                  <p className="text-xs text-grisclarito mt-2 break-all">
+                    {previewResource.original}
+                  </p>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

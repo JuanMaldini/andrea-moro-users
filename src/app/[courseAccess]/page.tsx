@@ -1,6 +1,11 @@
 import { notFound } from "next/navigation";
 import { createAdminClient, COLLECTION_DATA, getPbUrl } from "@/lib/pocketbase";
-import { parseCourseAccess, type CourseRecord, type CourseVideo } from "@/lib/course-utils";
+import {
+  parseCourseAccess,
+  type CourseRecord,
+  type CourseVideo,
+  type CourseResource,
+} from "@/lib/course-utils";
 import CoursePageClient from "./CoursePageClient";
 
 interface Props {
@@ -31,6 +36,10 @@ export default async function CourseAccessPage({ params }: Props) {
     (a, b) => a.order - b.order
   );
 
+  const resources: CourseResource[] = [...(course.json?.resources ?? [])].sort(
+    (a, b) => a.order - b.order
+  );
+
   return (
     <CoursePageClient
       courseId={course.id}
@@ -38,6 +47,7 @@ export default async function CourseAccessPage({ params }: Props) {
       title={course.title}
       description={course.description}
       videos={videos}
+      resources={resources}
       pbUrl={getPbUrl()}
       collectionName={COLLECTION_DATA}
       gallery={course.json?.gallery ?? []}
