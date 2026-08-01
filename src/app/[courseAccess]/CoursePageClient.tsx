@@ -214,34 +214,30 @@ export default function CoursePageClient({
                       <button
                         key={r.file}
                         onClick={() => setPreviewResource(r)}
-                        className="text-left focus:outline-none group"
+                        title={r.name}
+                        className="aspect-square bg-grisoscuro overflow-hidden focus:outline-none hover:shadow transition-shadow duration-150"
                       >
-                        <div className="aspect-square bg-grisoscuro overflow-hidden group-hover:shadow transition-shadow duration-150">
-                          {kind === "image" ? (
-                            <img
-                              src={fileUrl(r.file)}
-                              alt={r.name}
-                              draggable={false}
-                              className="w-full h-full object-cover select-none"
-                            />
-                          ) : kind === "video" ? (
-                            <video
-                              src={fileUrl(r.file)}
-                              className="w-full h-full object-cover"
-                              preload="metadata"
-                              playsInline
-                              muted
-                            />
-                          ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center gap-1">
-                              <span className="text-3xl">{kind === "pdf" ? "📄" : "📎"}</span>
-                              <span className="text-[10px] text-grisclarito uppercase">.{ext}</span>
-                            </div>
-                          )}
-                        </div>
-                        <p className="text-xs text-marroncalido mt-1 leading-snug break-words">
-                          {r.name}
-                        </p>
+                        {kind === "image" ? (
+                          <img
+                            src={fileUrl(r.file)}
+                            alt={r.name}
+                            draggable={false}
+                            className="w-full h-full object-cover select-none"
+                          />
+                        ) : kind === "video" ? (
+                          <video
+                            src={fileUrl(r.file)}
+                            className="w-full h-full object-cover"
+                            preload="metadata"
+                            playsInline
+                            muted
+                          />
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center gap-1">
+                            <span className="text-3xl">{kind === "pdf" ? "📄" : "📎"}</span>
+                            <span className="text-[10px] text-grisclarito uppercase">.{ext}</span>
+                          </div>
+                        )}
                       </button>
                     );
                   })}
@@ -290,17 +286,16 @@ export default function CoursePageClient({
           onClick={() => setPreviewResource(null)}
         >
           <div className="w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
-            {/* Cabecera: nombre + descargar + cerrar */}
+            {/* Cabecera: descargar (izquierda, solo icono) + cerrar */}
             <div className="flex items-center justify-between gap-3 mb-3">
-              <p className="text-xs text-grisoscuro uppercase tracking-widest truncate flex-1">
-                {previewResource.name}
-              </p>
               <a
                 href={downloadUrl(previewResource.file)}
                 download={previewResource.original}
-                className="flex-shrink-0 text-xs text-blanco bg-marron hover:bg-marroncalido px-4 py-2 uppercase tracking-widest transition-colors"
+                title="Descargar"
+                aria-label="Descargar"
+                className="flex-shrink-0 w-9 h-9 flex items-center justify-center text-base text-blanco bg-marron hover:bg-marroncalido transition-colors"
               >
-                ↓ Descargar
+                ↓
               </a>
               <button
                 onClick={() => setPreviewResource(null)}
