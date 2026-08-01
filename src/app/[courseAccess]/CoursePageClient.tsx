@@ -199,13 +199,8 @@ export default function CoursePageClient({
             {resources.length > 0 && (
               <div className="mt-10">
                 <p className="text-xs uppercase tracking-widest text-grisclarito mb-4">Recursos</p>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-                    gap: "6px",
-                  }}
-                >
+                {/* 2 columnas en móvil, 3 desde sm — igual que la galería */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                   {resources.map((r) => {
                     const kind = resourceKind(r.file);
                     const ext = r.file.split(".").pop()?.toLowerCase() ?? "";
@@ -252,15 +247,8 @@ export default function CoursePageClient({
       {state === "videos" && gallery.length > 0 && (
         <div className="px-4 pt-8 pb-12">
           <p className="text-xs uppercase tracking-widest text-grisclarito mb-4 max-w-xl mx-auto">Galería</p>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-              gap: "6px",
-              maxWidth: "720px",
-              margin: "0 auto",
-            }}
-          >
+          {/* 2 columnas en móvil, 3 desde sm */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-w-[720px] mx-auto">
             {gallery.map((filename) => (
               <button
                 key={filename}
