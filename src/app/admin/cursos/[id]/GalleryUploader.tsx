@@ -1,46 +1,24 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { getPocketBase, COLLECTION_DATA } from "@/lib/pocketbase-browser";
-import { uploadWithProgress } from "@/lib/upload";
-import type { CourseRecord, CourseJson } from "@/lib/course-utils";
+import { getPocketBase, COLLECTION_MEDIA, pbFileUrl } from "@/lib/pocketbase-browser";
+import { createWithProgress } from "@/lib/upload";
+import { stripExtension, type MediaRecord } from "@/lib/course-utils";
 
 interface Props {
   courseId: string;
-  course: CourseRecord;
-  gallery: string[];
-  onGalleryChange: (gallery: string[]) => void;
+  gallery: MediaRecord[];
 }
 
-export default function GalleryUploader({ courseId, course, gallery, onGalleryChange }: Props) {
-  const [photos, setPhotos] = useState<string[]>(gallery);
+export default function GalleryUploader({ courseId, gallery }: Props) {
+  const [photos, setPhotos] = useState<MediaRecord[]>(gallery);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Lista de TODOS los archivos del record (vídeos + fotos). Sirve para hacer
-  // el diff y saber el nombre real con el que PocketBase guardó cada foto nueva.
-  const knownFiles = useRef<string[]>(course.files ?? []);
-
-  const pbUrl = (process.env.NEXT_PUBLIC_PB_URL ?? "").replace(/\/$/, "");
-
-  function imgUrl(filename: string) {
-    return `${pbUrl}/api/files/${COLLECTION_DATA}/${courseId}/${filename}`;
-  }
-
-  function commit(updated: string[]) {
-    setPhotos(updated);
-    onGalleryChange(updated);
-  }
-
-  async function persistGallery(updated: string[]) {
-    const pb = getPocketBase();
-    // Lee el json más reciente para no pisar cambios de vídeos/keys hechos en
-    // la misma sesión, y mezcla solo la parte de gallery.
-    const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(courseId);
-    const updatedJson: CourseJson = { ...latest.json, gallery: updated };
-    await pb.collection(COLLECTION_DATA).update(courseId, { json: updatedJson });
+  function imgUrl(photo: MediaRecord) {
+    return pbFileUrl(COLLECTION_MEDIA, photo.id, photo.file);
   }
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -53,39 +31,27 @@ export default function GalleryUploader({ courseId, course, gallery, onGalleryCh
 
     let current = [...photos];
     try {
-      // Refresca el baseline con TODOS los archivos actuales del record antes de
-      // empezar. Sin esto, si en la misma sesión se subió un vídeo después de
-      // montar el componente, el diff lo tomaría como "archivo nuevo" y un vídeo
-      // se colaría en la galería de fotos. Leerlo fresco evita ese cruce.
-      try {
-        const pb = getPocketBase();
-        const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(courseId);
-        knownFiles.current = latest.files ?? knownFiles.current;
-      } catch {
-        /* si falla, seguimos con el baseline que teníamos */
-      }
-
       for (let i = 0; i < selected.length; i++) {
         const file = selected[i];
-        // Sube al campo único `files` (files+ → no pisa vídeos ni otras fotos).
-        const result = await uploadWithProgress<{ files: string[] }>(
-          courseId,
-          "files",
-          [file],
+        // Un record por foto: si hay error de red a mitad, las anteriores no se pierden.
+        const created = await createWithProgress<MediaRecord>(
+          COLLECTION_MEDIA,
+          {
+            course: courseId,
+            kind: "gallery",
+            name: stripExtension(file.name),
+            original: file.name,
+            order: current.length + 1,
+          },
+          file,
           (pct) => {
             // progreso global aproximado entre todas las fotos
             const base = Math.round((i / selected.length) * 100);
             setProgress(base + Math.round(pct / selected.length));
           }
         );
-        const all = result.files ?? [];
-        // El nombre real de la foto recién subida = el archivo nuevo en `files`.
-        const added = all.filter((f) => !knownFiles.current.includes(f));
-        knownFiles.current = all;
-        current = [...current, ...added];
-        commit(current);
-        // Guarda tras cada foto: si hay error de red a mitad, las anteriores no se pierden.
-        await persistGallery(current);
+        current = [...current, created];
+        setPhotos(current);
       }
       setProgress(100);
     } catch (err) {
@@ -96,20 +62,15 @@ export default function GalleryUploader({ courseId, course, gallery, onGalleryCh
     }
   }
 
-  async function deletePhoto(filename: string) {
+  async function deletePhoto(photo: MediaRecord) {
     const prev = photos;
-    const updated = photos.filter((f) => f !== filename);
     // Optimista: quita la foto de la UI al instante.
-    commit(updated);
-    knownFiles.current = knownFiles.current.filter((f) => f !== filename);
+    setPhotos(photos.filter((p) => p.id !== photo.id));
     try {
-      const pb = getPocketBase();
-      await pb.collection(COLLECTION_DATA).update(courseId, { "files-": [filename] });
-      await persistGallery(updated);
+      await getPocketBase().collection(COLLECTION_MEDIA).delete(photo.id);
     } catch {
       // Revierte si la red falló.
-      knownFiles.current = [...knownFiles.current, filename];
-      commit(prev);
+      setPhotos(prev);
       alert("Error al eliminar la foto.");
     }
   }
@@ -158,15 +119,15 @@ export default function GalleryUploader({ courseId, course, gallery, onGalleryCh
         </p>
       ) : (
         <div className="grid grid-cols-3 gap-2">
-          {photos.map((filename) => (
-            <div key={filename} className="relative group aspect-square bg-grisoscuro overflow-hidden">
+          {photos.map((photo) => (
+            <div key={photo.id} className="relative group aspect-square bg-grisoscuro overflow-hidden">
               <img
-                src={imgUrl(filename)}
-                alt={filename}
+                src={imgUrl(photo)}
+                alt={photo.file}
                 className="w-full h-full object-cover"
               />
               <button
-                onClick={() => deletePhoto(filename)}
+                onClick={() => deletePhoto(photo)}
                 className="absolute top-1 right-1 bg-marron text-blanco text-xs w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rojo"
               >
                 ×

@@ -1,174 +1,111 @@
 /**
  * UPLOAD_BATCH.mjs
  *
- * Toma todos los videos de una carpeta local, los convierte a H.264
- * con ffmpeg y los sube al curso especificado. Actualiza json.videos
- * preservando el orden alfabetico de los archivos originales.
+ * Toma todos los vídeos de una carpeta local (orden alfabético), los deja
+ * compatibles con todos los navegadores (misma lógica que CONVERT_VIDEOS:
+ * skip / remux / H.264 CRF 18, sin cambiar resolución ni fps) y los sube al
+ * curso como records de andreamoro_videos.
+ *
+ * Si el curso YA tiene vídeos hay que elegir:
+ *   --append   agrega al final
+ *   --replace  borra los vídeos actuales del curso y deja solo los nuevos
  *
  * Uso:
- *   node scripts\UPLOAD_BATCH.mjs <carpeta_origen> <slug_curso>
+ *   node scripts\UPLOAD_BATCH.mjs <carpeta_origen> <slug_curso> [--append|--replace]
  *
  * Ejemplo:
  *   node scripts\UPLOAD_BATCH.mjs "C:\Users\juanm\Downloads\Photos-3-001" flores-nepal
  */
 
-import { readFileSync, mkdirSync, rmSync, existsSync, writeFileSync, appendFileSync, readdirSync, statSync } from "fs";
-import { execSync, spawnSync } from "child_process";
-import { join, extname, basename } from "path";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "fs";
+import { join } from "path";
+import {
+  COURSES, VIDEOS, api, login, listAll, createLogger, requireFfmpeg,
+  createVideoRecord, probe, decide, ffmpegArgs, runFfmpeg, verifyOutput,
+} from "./lib/pb-video.mjs";
 
-// ── Args ───────────────────────────────────────────────────────────────────
-const [, , sourceArg, slugArg] = process.argv;
+const args = process.argv.slice(2);
+const flags = new Set(args.filter((a) => a.startsWith("--")));
+const [sourceArg, slugArg] = args.filter((a) => !a.startsWith("--"));
 if (!sourceArg || !slugArg) {
-  console.error("Uso: node scripts\\UPLOAD_BATCH.mjs <carpeta_origen> <slug_curso>");
+  console.error("Uso: node scripts\\UPLOAD_BATCH.mjs <carpeta_origen> <slug_curso> [--append|--replace]");
   process.exit(1);
 }
 const SOURCE_DIR = sourceArg.replace(/^["']|["']$/g, "");
-const COURSE_SLUG = slugArg;
+const COURSE_SLUG = slugArg.toLowerCase();
 if (!existsSync(SOURCE_DIR)) { console.error(`No existe: ${SOURCE_DIR}`); process.exit(1); }
 
-// ── .env ───────────────────────────────────────────────────────────────────
-const envPath = new URL("../.env", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
-if (!existsSync(envPath)) { console.error("No se encontró .env"); process.exit(1); }
-const envContent = readFileSync(envPath, "utf-8");
-function envVal(key) {
-  const re = new RegExp(`^${key}=(.*)$`, "m");
-  const m = envContent.match(re);
-  return m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
-}
-const PB_URL     = envVal("NEXT_PUBLIC_PB_URL").replace(/\/$/, "");
-const TOKEN      = envVal("PB" + "_" + "ADMIN" + "_" + "TOKEN");
-const COLLECTION = envVal("NEXT_PUBLIC_PB_DATA") || "andreamoro_data";
-if (!PB_URL || !TOKEN) { console.error("Faltan env vars"); process.exit(1); }
-
-// ── Logs ───────────────────────────────────────────────────────────────────
-const LOG_DIR = join(import.meta.dirname, "_logs");
-mkdirSync(LOG_DIR, { recursive: true });
-const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-const logFile = join(LOG_DIR, `upload-${stamp}.log`);
-writeFileSync(logFile, "");
-function log(msg) {
-  const line = `[${new Date().toISOString()}] ${msg}\n`;
-  appendFileSync(logFile, line);
-  process.stdout.write(line);
-}
-
-// ── Chequeo ffmpeg ─────────────────────────────────────────────────────────
-try { execSync("ffmpeg -version", { stdio: "ignore" }); }
-catch { log("ffmpeg no encontrado. Instalalo."); process.exit(1); }
-
+const log = createLogger("upload");
 const TMP = join(import.meta.dirname, "_tmp_upload");
-mkdirSync(TMP, { recursive: true });
-
-// ── API ────────────────────────────────────────────────────────────────────
-async function api(method, path, body, isForm) {
-  const opts = { method, headers: { Authorization: TOKEN } };
-  if (body) {
-    if (isForm) opts.body = body;
-    else { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
-  }
-  const r = await fetch(`${PB_URL}/api/${path}`, opts);
-  const text = await r.text();
-  if (!r.ok) throw new Error(`${method} /api/${path} → HTTP ${r.status}\n${text}`);
-  return text ? JSON.parse(text) : {};
-}
-
-const slugUnderscored = COURSE_SLUG.replace(/-/g, "_");
 const VIDEO_EXT = /\.(mp4|mov|m4v|avi|mkv|webm)$/i;
 
-// Lee el codec del primer stream de video/audio de un archivo local.
-function probeStream(input, kind) {
-  const r = spawnSync("ffprobe", [
-    "-v", "error",
-    "-select_streams", kind === "video" ? "v:0" : "a:0",
-    "-show_entries", "stream=codec_name",
-    "-of", "default=nw=1:nk=1",
-    input,
-  ]);
-  return (r.stdout?.toString() || "").trim();
-}
-
-// ── Main ───────────────────────────────────────────────────────────────────
 async function main() {
   log("=== UPLOAD BATCH ===");
   log(`Origen: ${SOURCE_DIR}`);
   log(`Curso slug: ${COURSE_SLUG}`);
+  requireFfmpeg(log);
+  await login(log);
 
-  // 1. Listar videos de la carpeta (orden alfabetico)
-  const files = readdirSync(SOURCE_DIR)
-    .filter(f => VIDEO_EXT.test(f))
-    .sort();
-  if (files.length === 0) { log(`Sin videos en ${SOURCE_DIR}`); process.exit(1); }
-  log(`Videos a procesar: ${files.length}`);
+  // 1. Vídeos de la carpeta (orden alfabético)
+  const files = readdirSync(SOURCE_DIR).filter((f) => VIDEO_EXT.test(f)).sort();
+  if (files.length === 0) { log(`Sin vídeos en ${SOURCE_DIR}`); process.exit(1); }
+  log(`Vídeos a procesar: ${files.length}`);
 
-  // 2. Encontrar el record del curso
-  const records = (await api("GET", `collections/${COLLECTION}/records?perPage=200`)).items ?? [];
-  const course = records.find(r => r.json?.slug === COURSE_SLUG);
+  // 2. Curso
+  const [course] = await listAll(COURSES, { filter: `slug = "${COURSE_SLUG.replace(/[^a-z0-9-]/g, "")}"` });
   if (!course) { log(`No existe curso con slug "${COURSE_SLUG}"`); process.exit(1); }
   log(`Curso: "${course.title}" (id=${course.id})`);
 
-  // 3. Procesar cada video
+  const existing = await listAll(VIDEOS, { filter: `course = "${course.id}"`, sort: "order" });
+  if (existing.length && !flags.has("--append") && !flags.has("--replace")) {
+    log(`El curso ya tiene ${existing.length} vídeo(s). Volvé a correr con --append (agregar al final) o --replace (reemplazar).`);
+    process.exit(1);
+  }
+  const replace = flags.has("--replace");
+  let order = replace ? 0 : existing.length;
+
+  mkdirSync(TMP, { recursive: true });
   const uploaded = [];
+
+  // 3. Procesar cada vídeo
   for (let i = 0; i < files.length; i++) {
-    const order = i + 1;
+    order++;
     const src = join(SOURCE_DIR, files[i]);
-    const newName = `${slugUnderscored}_${order}.mp4`;
+    const newName = `${COURSE_SLUG.replace(/-/g, "_")}_${order}.mp4`;
     const tmp = join(TMP, newName);
+    log(`\n[${i + 1}/${files.length}] ${files[i]}`);
 
-    log(`\n[${order}/${files.length}] ${files[i]}`);
+    const info = probe(src);
+    const action = decide(info, { isMp4: /\.mp4$/i.test(files[i]), faststart: false });
+    log(`video: ${info.vCodec} ${info.pixFmt}${info.transfer ? ` (${info.transfer})` : ""} · audio: ${info.aCodec || "—"} ⇒ ${action === "encode" ? "ENCODE" : "REMUX (sin re-encode)"}`);
 
-    // 3a. Probar codecs del archivo local: solo re-encodeamos si hace falta.
-    const vCodec = probeStream(src, "video");
-    const aCodec = probeStream(src, "audio");
-    const isMp4 = /\.mp4$/i.test(files[i]);
-    const codecsOk = vCodec === "h264" && (aCodec === "" || aCodec === "aac");
-    const mode = codecsOk ? (isMp4 ? "copy" : "remux") : "encode";
-    log(`Codecs → video: ${vCodec || "—"}, audio: ${aCodec || "—"}  ⇒ ${mode}`);
+    const ff = runFfmpeg(ffmpegArgs(action === "encode" ? "encode" : "remux", src, tmp, info));
+    if (!ff.ok) { log(`FFMPEG FALLO:\n${ff.stderr.slice(-3000)}`); throw new Error(`ffmpeg en ${files[i]}`); }
+    const check = verifyOutput(tmp, info.duration);
+    if (!check.ok) throw new Error(`resultado inválido en ${files[i]}`);
+    log(`OK (${(statSync(tmp).size / 1048576).toFixed(1)} MB)`);
 
-    const ffArgs = mode === "encode"
-      ? ["-y", "-i", src,
-         "-c:v", "libx264", "-profile:v", "main", "-pix_fmt", "yuv420p",
-         "-preset", "medium", "-crf", "23",
-         "-c:a", "aac", "-b:a", "128k",
-         "-movflags", "+faststart", tmp]
-      : ["-y", "-i", src, "-c", "copy", "-movflags", "+faststart", tmp];
-    log(mode === "encode" ? "Convirtiendo..." : "Empaquetando a mp4 (sin re-encode)...");
-    const ff = spawnSync("ffmpeg", ffArgs, { stdio: ["ignore", "pipe", "pipe"] });
-    if (ff.status !== 0) {
-      log(`FFMPEG FALLO: ${ff.stderr?.toString()}`);
-      throw new Error(`ffmpeg en ${files[i]}`);
-    }
-    const outSize = (statSync(tmp).size / 1024 / 1024).toFixed(1);
-    log(`OK (${outSize} MB)`);
-
-    // 3b. Upload (files+)
-    log("Subiendo...");
-    const before = new Set(course.files ?? []);
-    const fd = new FormData();
-    fd.append("files+", new Blob([readFileSync(tmp)], { type: "video/mp4" }), newName);
-    const updated = await api("PATCH", `collections/${COLLECTION}/records/${course.id}`, fd, true);
-    const actual = (updated.files ?? []).find(f => !before.has(f)) ?? newName;
-    log(`Guardado: ${actual}`);
-
-    uploaded.push({ order, name: `${COURSE_SLUG}_${order}`, file: actual });
-
-    // cleanup tmp
+    log("Subiendo…");
+    const rec = await createVideoRecord({ course: course.id, name: `${COURSE_SLUG}_${order}`, order }, tmp, newName);
+    log(`Guardado: ${rec.file}`);
+    uploaded.push(rec);
     rmSync(tmp, { force: true });
   }
 
-  // 4. Update json.videos (reemplaza lista, preserva el resto del json)
-  log(`\nActualizando json.videos con ${uploaded.length} entradas...`);
-  await api("PATCH", `collections/${COLLECTION}/records/${course.id}`, {
-    json: { ...course.json, videos: uploaded }
-  });
-  log("OK");
+  // 4. --replace: recién ahora (todo subió bien) se borran los anteriores
+  if (replace && existing.length) {
+    log(`\nBorrando ${existing.length} vídeo(s) anteriores…`);
+    for (const v of existing) await api("DELETE", `collections/${VIDEOS}/records/${v.id}`);
+    log("OK");
+  }
 
   rmSync(TMP, { recursive: true, force: true });
   log(`\n=== FIN ===`);
   log(`Subidos: ${uploaded.length}`);
-  log(`Log: ${logFile}`);
+  log(`Log: ${log.file}`);
 }
 
-main().catch(err => {
+main().catch((err) => {
   log(`\n❌ ERROR: ${err.message}`);
   log(`Stack: ${err.stack}`);
   process.exit(1);

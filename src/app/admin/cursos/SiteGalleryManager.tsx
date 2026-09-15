@@ -1,34 +1,25 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getPocketBase, COLLECTION_DATA } from "@/lib/pocketbase-browser";
-import { uploadWithProgress } from "@/lib/upload";
+import { getPocketBase, COLLECTION_MEDIA, pbFileUrl } from "@/lib/pocketbase-browser";
+import { createWithProgress } from "@/lib/upload";
+import { stripExtension, type MediaRecord } from "@/lib/course-utils";
 
-const PB_URL = (process.env.NEXT_PUBLIC_PB_URL ?? "").replace(/\/$/, "");
-
-function fileUrl(recordId: string, filename: string): string {
-  return `${PB_URL}/api/files/${COLLECTION_DATA}/${recordId}/${filename}`;
-}
-
-interface SiteRecord {
-  id: string;
-  files: string[];
-  json: { type?: string };
-}
+type SiteKind = "site_gallery" | "site_andrea";
 
 /* ─── Sub-sección ──────────────────────────────────────────────── */
 interface SectionProps {
   title: string;
-  record: SiteRecord | null;
+  items: MediaRecord[];
   uploading: boolean;
   progress: number;
   onUpload: (files: File[]) => void;
-  onDelete: (filename: string) => void;
+  onDelete: (item: MediaRecord) => void;
 }
 
 function GallerySection({
   title,
-  record,
+  items,
   uploading,
   progress,
   onUpload,
@@ -36,7 +27,6 @@ function GallerySection({
 }: SectionProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const files = record?.files ?? [];
 
   return (
     <div className="mt-10">
@@ -45,7 +35,7 @@ function GallerySection({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={uploading || !record}
+          disabled={uploading}
           className="text-xs font-bold border-2 border-marron text-marron px-3 py-1.5 hover:bg-marron hover:text-blanco transition-all rounded disabled:opacity-40"
         >
           + Agregar fotos
@@ -74,21 +64,21 @@ function GallerySection({
         </div>
       )}
 
-      {files.length === 0 ? (
+      {items.length === 0 ? (
         <p className="text-sm text-grisoscuro/60 py-4">Sin fotos aún.</p>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-          {files.map((filename) => (
-            <div key={filename} className="relative group aspect-[3/4]">
+          {items.map((item) => (
+            <div key={item.id} className="relative group aspect-[3/4]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={fileUrl(record!.id, filename)}
+                src={pbFileUrl(COLLECTION_MEDIA, item.id, item.file)}
                 alt=""
                 className="w-full h-full object-cover"
                 draggable={false}
               />
 
-              {pendingDelete === filename ? (
+              {pendingDelete === item.id ? (
                 /* Confirmación inline */
                 <div className="absolute inset-0 bg-black/65 flex flex-col items-center justify-center gap-2 p-2">
                   <p className="text-white text-xs font-semibold text-center leading-tight">
@@ -97,7 +87,7 @@ function GallerySection({
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => { onDelete(filename); setPendingDelete(null); }}
+                      onClick={() => { onDelete(item); setPendingDelete(null); }}
                       className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded"
                     >
                       Sí
@@ -115,7 +105,7 @@ function GallerySection({
                 /* Botón X — siempre visible, más grande */
                 <button
                   type="button"
-                  onClick={() => setPendingDelete(filename)}
+                  onClick={() => setPendingDelete(item.id)}
                   title="Eliminar"
                   className="absolute top-1 right-1 w-8 h-8 bg-red-500/75 hover:bg-red-600 text-white text-xl font-bold rounded-full flex items-center justify-center shadow transition-colors"
                 >
@@ -132,8 +122,8 @@ function GallerySection({
 
 /* ─── Componente principal ─────────────────────────────────────── */
 export default function SiteGalleryManager() {
-  const [galleryRecord, setGalleryRecord] = useState<SiteRecord | null>(null);
-  const [andreaRecord, setAndreaRecord] = useState<SiteRecord | null>(null);
+  const [galleryItems, setGalleryItems] = useState<MediaRecord[]>([]);
+  const [andreaItems, setAndreaItems] = useState<MediaRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -142,34 +132,18 @@ export default function SiteGalleryManager() {
   const [andreaUploading, setAndreaUploading] = useState(false);
   const [andreaProgress, setAndreaProgress] = useState(0);
 
-  /* Fetch / crear records al montar */
+  /* Fetch al montar */
   useEffect(() => {
     const pb = getPocketBase();
 
     async function init() {
       try {
-        const all = await pb
-          .collection(COLLECTION_DATA)
-          .getFullList<SiteRecord>({ perPage: 200 });
-
-        let galleryRec =
-          all.find((r) => r.json?.type === "gallery") ?? null;
-        let andreaRec =
-          all.find((r) => r.json?.type === "andrea") ?? null;
-
-        if (!galleryRec) {
-          galleryRec = await pb
-            .collection(COLLECTION_DATA)
-            .create<SiteRecord>({ title: "__gallery__", json: { type: "gallery" } });
-        }
-        if (!andreaRec) {
-          andreaRec = await pb
-            .collection(COLLECTION_DATA)
-            .create<SiteRecord>({ title: "__andrea__", json: { type: "andrea" } });
-        }
-
-        setGalleryRecord(galleryRec);
-        setAndreaRecord(andreaRec);
+        const all = await pb.collection(COLLECTION_MEDIA).getFullList<MediaRecord>({
+          filter: 'kind = "site_gallery" || kind = "site_andrea"',
+          sort: "order,created",
+        });
+        setGalleryItems(all.filter((m) => m.kind === "site_gallery"));
+        setAndreaItems(all.filter((m) => m.kind === "site_andrea"));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error cargando galerías");
       } finally {
@@ -180,10 +154,11 @@ export default function SiteGalleryManager() {
     init();
   }, []);
 
-  /* Upload genérico */
+  /* Upload genérico: un record por foto */
   async function handleUpload(
-    record: SiteRecord,
-    setRecord: (r: SiteRecord) => void,
+    kind: SiteKind,
+    items: MediaRecord[],
+    setItems: (r: MediaRecord[]) => void,
     setUploading: (b: boolean) => void,
     setProgress: (n: number) => void,
     files: File[]
@@ -191,14 +166,27 @@ export default function SiteGalleryManager() {
     if (!files.length) return;
     setUploading(true);
     setProgress(0);
+    let current = [...items];
     try {
-      const updated = await uploadWithProgress<SiteRecord>(
-        record.id,
-        "files",
-        files,
-        setProgress
-      );
-      setRecord(updated);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const created = await createWithProgress<MediaRecord>(
+          COLLECTION_MEDIA,
+          {
+            kind,
+            name: stripExtension(file.name),
+            original: file.name,
+            order: current.length + 1,
+          },
+          file,
+          (pct) => {
+            const base = Math.round((i / files.length) * 100);
+            setProgress(base + Math.round(pct / files.length));
+          }
+        );
+        current = [...current, created];
+        setItems(current);
+      }
     } catch (e) {
       console.error("[SiteGalleryManager] upload error:", e);
     } finally {
@@ -209,16 +197,14 @@ export default function SiteGalleryManager() {
 
   /* Delete genérico */
   async function handleDelete(
-    record: SiteRecord,
-    setRecord: (r: SiteRecord) => void,
-    filename: string
+    items: MediaRecord[],
+    setItems: (r: MediaRecord[]) => void,
+    item: MediaRecord
   ) {
     const pb = getPocketBase();
     try {
-      const updated = await pb
-        .collection(COLLECTION_DATA)
-        .update<SiteRecord>(record.id, { "files-": [filename] });
-      setRecord(updated);
+      await pb.collection(COLLECTION_MEDIA).delete(item.id);
+      setItems(items.filter((m) => m.id !== item.id));
     } catch (e) {
       console.error("[SiteGalleryManager] delete error:", e);
     }
@@ -244,44 +230,38 @@ export default function SiteGalleryManager() {
         <>
           <GallerySection
             title="Galería"
-            record={galleryRecord}
+            items={galleryItems}
             uploading={galleryUploading}
             progress={galleryProgress}
             onUpload={(files) =>
-              galleryRecord &&
               handleUpload(
-                galleryRecord,
-                setGalleryRecord,
+                "site_gallery",
+                galleryItems,
+                setGalleryItems,
                 setGalleryUploading,
                 setGalleryProgress,
                 files
               )
             }
-            onDelete={(filename) =>
-              galleryRecord &&
-              handleDelete(galleryRecord, setGalleryRecord, filename)
-            }
+            onDelete={(item) => handleDelete(galleryItems, setGalleryItems, item)}
           />
 
           <GallerySection
             title="Andrea en Acción"
-            record={andreaRecord}
+            items={andreaItems}
             uploading={andreaUploading}
             progress={andreaProgress}
             onUpload={(files) =>
-              andreaRecord &&
               handleUpload(
-                andreaRecord,
-                setAndreaRecord,
+                "site_andrea",
+                andreaItems,
+                setAndreaItems,
                 setAndreaUploading,
                 setAndreaProgress,
                 files
               )
             }
-            onDelete={(filename) =>
-              andreaRecord &&
-              handleDelete(andreaRecord, setAndreaRecord, filename)
-            }
+            onDelete={(item) => handleDelete(andreaItems, setAndreaItems, item)}
           />
         </>
       )}

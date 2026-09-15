@@ -1,44 +1,43 @@
-// Tipos para la estructura de cursos
+// Tipos y utilidades de cursos (colecciones v2: courses / videos / media)
 
-export interface CourseVideo {
+/** Curso — record de `andreamoro_courses`. */
+export interface CourseRecord {
+  id: string;
+  title: string;
+  description: string;
+  price: number;        // Precio en ARS
+  slug: string;         // fijo desde la creación: los links enviados no se rompen
+  token: string;        // 8 hex, parte de la URL (no se valida, solo identifica)
+  published: boolean;
+  created: string;
+  updated: string;
+}
+
+/** Vídeo de un curso — record de `andreamoro_videos` (un archivo por record). */
+export interface VideoRecord {
+  id: string;
+  course: string;
   file: string;
   name: string;
   order: number;
 }
 
+export type MediaKind = "resource" | "gallery" | "site_gallery" | "site_andrea";
+
 /**
- * Material de apoyo descargable del curso (fotos de referencia, vídeos extra).
- * Por ahora solo se admiten imágenes y vídeos — ver ResourcesUploader.
- * Como los vídeos y la galería, el archivo vive en el campo `files` del record;
- * aquí solo se guarda el reparto y los nombres.
+ * Archivo suelto — record de `andreamoro_media`.
+ *  - resource:     material de apoyo descargable del curso
+ *  - gallery:      fotos del curso
+ *  - site_gallery / site_andrea: galerías de la página principal (sin curso)
  */
-export interface CourseResource {
-  file: string;     // nombre real dentro de `files` (el que asignó PocketBase)
-  name: string;     // nombre de display, editable
-  original: string; // nombre original del archivo subido
-  order: number;
-}
-
-export interface CourseJson {
-  published?: boolean; // siempre true; se conserva por compat con datos existentes
-  slug?: string;
-  token?: string;    // parte de la URL del curso (no se valida, solo identifica)
-  videos?: CourseVideo[];
-  gallery?: string[]; // nombres de archivo (dentro del campo `files`) que son fotos
-  resources?: CourseResource[]; // material de apoyo descargable
-  type?: "course" | "gallery" | "andrea"; // discriminador: undefined/absent = curso
-}
-
-export interface CourseRecord {
+export interface MediaRecord {
   id: string;
-  files: string[];      // ÚNICO campo de archivos: contiene vídeos Y fotos.
-                        // El reparto (qué es vídeo / qué es foto) vive en `json`.
-  title: string;
-  description: string;
-  price: number;        // Precio en ARS — campo raíz en PocketBase
-  json: CourseJson;
-  created: string;
-  updated: string;
+  course: string;   // "" en las galerías del sitio
+  kind: MediaKind;
+  file: string;
+  name: string;
+  original: string;
+  order: number;
 }
 
 /**
@@ -51,6 +50,30 @@ export function generateToken(): string {
   return Array.from(array)
     .map((b: number) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/** "Técnica Base" → "tecnica-base" */
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+/**
+ * Devuelve `base` si no está usado; si no, `base-2`, `base-3`…
+ * `taken` = slugs existentes.
+ */
+export function uniqueSlug(base: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  if (!used.has(base)) return base;
+  let n = 2;
+  while (used.has(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
 }
 
 /**

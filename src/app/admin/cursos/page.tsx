@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createServerClient, createAdminClient, COLLECTION_DATA } from "@/lib/pocketbase";
-import { type CourseRecord, buildCourseUrl } from "@/lib/course-utils";
+import { createServerClient, COLLECTION_COURSES, COLLECTION_VIDEOS } from "@/lib/pocketbase";
+import { type CourseRecord, type VideoRecord, buildCourseUrl } from "@/lib/course-utils";
 import LogoutButton from "@/components/LogoutButton";
 import CopiarLink from "@/components/CopiarLink";
 import SiteGalleryManager from "./SiteGalleryManager";
@@ -15,13 +15,15 @@ export default async function CursosPage() {
     "https://cursos.andreamorotienda.com";
 
   let courses: CourseRecord[] = [];
+  // Cantidad de vídeos por curso
+  const videoCount = new Map<string, number>();
   try {
-    const pbAdmin = createAdminClient();
-    const all = await pbAdmin
-      .collection(COLLECTION_DATA)
-      .getFullList<CourseRecord>({ sort: "title" });
-    // Excluir records de galería/andrea — solo mostrar cursos
-    courses = all.filter((r) => !r.json?.type || r.json.type === "course");
+    const [allCourses, allVideos] = await Promise.all([
+      pb.collection(COLLECTION_COURSES).getFullList<CourseRecord>({ sort: "title" }),
+      pb.collection(COLLECTION_VIDEOS).getFullList<Pick<VideoRecord, "course">>({ fields: "course" }),
+    ]);
+    courses = allCourses;
+    for (const v of allVideos) videoCount.set(v.course, (videoCount.get(v.course) ?? 0) + 1);
   } catch {
     // sin cursos o error de conexión
   }
@@ -56,11 +58,9 @@ export default async function CursosPage() {
         ) : (
           <div className="space-y-6">
             {courses.map((course) => {
-              const videos = course.json?.videos ?? [];
-              const slug = course.json?.slug ?? "";
-              const courseToken = course.json?.token;
-              const copyUrl = slug && courseToken
-                ? `${host}${buildCourseUrl(slug, courseToken)}`
+              const videosCount = videoCount.get(course.id) ?? 0;
+              const copyUrl = course.slug && course.token
+                ? `${host}${buildCourseUrl(course.slug, course.token)}`.toLowerCase()
                 : null;
 
               return (
@@ -78,10 +78,10 @@ export default async function CursosPage() {
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <p className="text-sm md:text-base font-bold text-blanco">
-                        {videos.length}
+                        {videosCount}
                       </p>
                       <p className="text-xs md:text-sm text-blanco/90 font-medium">
-                        {videos.length === 1 ? "vid." : "vid."}
+                        {videosCount === 1 ? "vid." : "vid."}
                       </p>
                     </div>
                   </div>

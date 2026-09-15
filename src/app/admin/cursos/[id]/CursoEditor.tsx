@@ -2,12 +2,12 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getPocketBase, COLLECTION_DATA } from "@/lib/pocketbase-browser";
+import { getPocketBase, COLLECTION_COURSES } from "@/lib/pocketbase-browser";
 import { COURSE_PASSWORD } from "@/lib/auth";
 import {
   type CourseRecord,
-  type CourseVideo,
-  type CourseResource,
+  type VideoRecord,
+  type MediaRecord,
 } from "@/lib/course-utils";
 import VideoUploader from "./VideoUploader";
 import ResourcesUploader from "./ResourcesUploader";
@@ -15,21 +15,14 @@ import GalleryUploader from "./GalleryUploader";
 
 interface Props {
   course: CourseRecord;
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-");
+  videos: VideoRecord[];
+  resources: MediaRecord[];
+  gallery: MediaRecord[];
 }
 
 type SaveStatus = "idle" | "saving" | "saved";
 
-export default function CursoEditor({ course }: Props) {
+export default function CursoEditor({ course, videos, resources, gallery }: Props) {
   const router = useRouter();
 
   const [title, setTitle] = useState(course.title);
@@ -39,18 +32,10 @@ export default function CursoEditor({ course }: Props) {
   // Enter (ver commitPrice) — así se pueden borrar todos los dígitos sin que
   // reaparezca un 0 y sin guardar estados intermedios.
   const [priceInput, setPriceInput] = useState<string>(String(course.price ?? 0));
-  const [slug, setSlug] = useState(course.json?.slug ?? course.id);
+  // El slug se fija al crear el curso: cambiar el título NO cambia el link.
+  const slug = course.slug;
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [passCopied, setPassCopied] = useState(false);
-
-  // Videos
-  const [videos, setVideos] = useState<CourseVideo[]>(course.json?.videos ?? []);
-
-  // Resources
-  const [resources, setResources] = useState<CourseResource[]>(course.json?.resources ?? []);
-
-  // Gallery
-  const [gallery, setGallery] = useState<string[]>(course.json?.gallery ?? []);
 
   // Delete course
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -60,10 +45,6 @@ export default function CursoEditor({ course }: Props) {
   const titleRef = useRef(title);
   const descriptionRef = useRef(description);
   const priceRef = useRef<number>(course.price ?? 0);
-  const slugRef = useRef(slug);
-  const videosRef = useRef<CourseVideo[]>(videos);
-  const resourcesRef = useRef<CourseResource[]>(resources);
-  const galleryRef = useRef<string[]>(gallery);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Save ────────────────────────────────────────────────────────────────
@@ -72,19 +53,12 @@ export default function CursoEditor({ course }: Props) {
     setSaveStatus("saving");
     try {
       const pb = getPocketBase();
-      const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(course.id);
-      await pb.collection(COLLECTION_DATA).update(course.id, {
+      // Solo campos propios del curso: vídeos y archivos viven en sus colecciones.
+      await pb.collection(COLLECTION_COURSES).update(course.id, {
         title: titleRef.current.trim(),
         description: descriptionRef.current,
         price: priceRef.current,
-        json: {
-          ...latest.json,
-          published: true,
-          slug: slugRef.current,
-          videos: videosRef.current,
-          resources: resourcesRef.current,
-          gallery: galleryRef.current,
-        },
+        published: true,
       });
       setSaveStatus("saved");
       router.refresh();
@@ -100,9 +74,7 @@ export default function CursoEditor({ course }: Props) {
   }
 
   function handleTitleChange(val: string) {
-    const newSlug = slugify(val);
     setTitle(val); titleRef.current = val;
-    setSlug(newSlug); slugRef.current = newSlug;
     scheduleSave();
   }
 
@@ -141,30 +113,14 @@ export default function CursoEditor({ course }: Props) {
     });
   }
 
-  // ── Videos callback ──────────────────────────────────────────────────────
-
-  function handleVideosChange(newVideos: CourseVideo[]) {
-    setVideos(newVideos);
-    videosRef.current = newVideos;
-  }
-
-  function handleResourcesChange(newResources: CourseResource[]) {
-    setResources(newResources);
-    resourcesRef.current = newResources;
-  }
-
-  function handleGalleryChange(newGallery: string[]) {
-    setGallery(newGallery);
-    galleryRef.current = newGallery;
-  }
-
   // ── Delete course ────────────────────────────────────────────────────────
 
   async function handleDeleteCourse() {
     setDeleting(true);
     try {
       const pb = getPocketBase();
-      await pb.collection(COLLECTION_DATA).delete(course.id);
+      // Vídeos y archivos del curso se borran en cascada (relation cascadeDelete).
+      await pb.collection(COLLECTION_COURSES).delete(course.id);
       router.push("/admin/cursos");
       router.refresh();
     } catch {
@@ -239,28 +195,13 @@ export default function CursoEditor({ course }: Props) {
       </section>
 
       {/* === Vídeos === */}
-      <VideoUploader
-        courseId={course.id}
-        slug={slugRef.current}
-        videos={videos}
-        onVideosChange={handleVideosChange}
-      />
+      <VideoUploader courseId={course.id} slug={slug} videos={videos} />
 
       {/* === Recursos === */}
-      <ResourcesUploader
-        courseId={course.id}
-        course={course}
-        resources={resources}
-        onResourcesChange={handleResourcesChange}
-      />
+      <ResourcesUploader courseId={course.id} resources={resources} />
 
       {/* === Galería === */}
-      <GalleryUploader
-        courseId={course.id}
-        course={course}
-        gallery={gallery}
-        onGalleryChange={handleGalleryChange}
-      />
+      <GalleryUploader courseId={course.id} gallery={gallery} />
 
       {/* === Zona peligrosa === */}
       <section className="border-t-2 border-grisoscuro pt-10">

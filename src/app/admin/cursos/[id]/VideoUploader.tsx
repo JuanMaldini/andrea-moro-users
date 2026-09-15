@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { getPocketBase, COLLECTION_DATA } from "@/lib/pocketbase-browser";
-import { uploadWithProgress } from "@/lib/upload";
-import type { CourseVideo, CourseJson, CourseRecord } from "@/lib/course-utils";
+import { getPocketBase, COLLECTION_VIDEOS, pbFileUrl } from "@/lib/pocketbase-browser";
+import { createWithProgress, formatBytes } from "@/lib/upload";
+import type { VideoRecord } from "@/lib/course-utils";
 
 interface UploadItem {
   file: File;
-  newName: string;
+  label: string; // nombre de display fijado al elegir el archivo (slug_N)
   status: "waiting" | "uploading" | "done" | "error";
   progress: number;
   error?: string;
@@ -16,8 +16,7 @@ interface UploadItem {
 interface Props {
   courseId: string;
   slug: string;
-  videos: CourseVideo[];
-  onVideosChange: (videos: CourseVideo[]) => void;
+  videos: VideoRecord[];
 }
 
 // ─── Utilidades ──────────────────────────────────────────────────────────────
@@ -49,51 +48,48 @@ function displayName(slug: string, order: number): string {
 
 // ─── Componente ──────────────────────────────────────────────────────────────
 
-export default function VideoUploader({ courseId, slug, videos, onVideosChange }: Props) {
-  const [localVideos, setLocalVideos] = useState<CourseVideo[]>(videos);
+export default function VideoUploader({ courseId, slug, videos }: Props) {
+  const [localVideos, setLocalVideos] = useState<VideoRecord[]>(videos);
   const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const [allDone, setAllDone] = useState(false);
 
-  // Duración extraída via onLoadedMetadata (filename → segundos)
+  // Duración extraída via onLoadedMetadata (id → segundos)
   const [durations, setDurations] = useState<Record<string, number>>({});
-  // Errores de carga (filename → mensaje)
+  // Errores de carga (id → mensaje)
   const [videoErrors, setVideoErrors] = useState<Record<string, string>>({});
   // Vídeos cuyo metadata cargó sin error
   const [videoLoaded, setVideoLoaded] = useState<Record<string, boolean>>({});
   // Vídeo que se está reproduciendo en el modal
-  const [playingVideo, setPlayingVideo] = useState<CourseVideo | null>(null);
+  const [playingVideo, setPlayingVideo] = useState<VideoRecord | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const pbUrl = (process.env.NEXT_PUBLIC_PB_URL ?? "").replace(/\/$/, "");
 
-  // Los archivos son públicos en PocketBase (API rules vacías) → URL simple sin token.
-  // Esto también evita el hydration mismatch que ocurría al añadir ?token= solo en cliente.
-  function videoUrl(filename: string): string {
-    return `${pbUrl}/api/files/${COLLECTION_DATA}/${courseId}/${filename}`;
+  function videoUrl(v: VideoRecord): string {
+    return pbFileUrl(COLLECTION_VIDEOS, v.id, v.file);
   }
 
-  function handleVideoLoadedMetadata(filename: string, e: React.SyntheticEvent<HTMLVideoElement>) {
+  function handleVideoLoadedMetadata(id: string, e: React.SyntheticEvent<HTMLVideoElement>) {
     const dur = e.currentTarget.duration;
     if (isFinite(dur) && dur > 0) {
-      setDurations((prev) => ({ ...prev, [filename]: dur }));
+      setDurations((prev) => ({ ...prev, [id]: dur }));
     }
-    setVideoLoaded((prev) => ({ ...prev, [filename]: true }));
+    setVideoLoaded((prev) => ({ ...prev, [id]: true }));
     setVideoErrors((prev) => {
-      if (!prev[filename]) return prev;
+      if (!prev[id]) return prev;
       const next = { ...prev };
-      delete next[filename];
+      delete next[id];
       return next;
     });
   }
 
-  function handleVideoError(filename: string) {
-    const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  function handleVideoError(v: VideoRecord) {
+    const ext = v.file.split(".").pop()?.toLowerCase() ?? "";
     const msg = POTENTIALLY_UNSUPPORTED.includes(ext)
       ? `Formato .${ext} no reproducible en Chrome/Firefox. Convierte a MP4 H.264.`
       : "No se pudo cargar el vídeo.";
-    setVideoErrors((prev) => ({ ...prev, [filename]: msg }));
-    setVideoLoaded((prev) => ({ ...prev, [filename]: false }));
+    setVideoErrors((prev) => ({ ...prev, [v.id]: msg }));
+    setVideoLoaded((prev) => ({ ...prev, [v.id]: false }));
   }
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -116,11 +112,12 @@ export default function VideoUploader({ courseId, slug, videos, onVideosChange }
     }
 
     const startIdx = localVideos.length + 1;
-    const items: UploadItem[] = selected.map((f, i) => {
-      const ext = f.name.split(".").pop()?.toLowerCase() ?? "mp4";
-      const newName = `${slug}_${startIdx + i}.${ext}`;
-      return { file: f, newName, status: "waiting" as const, progress: 0 };
-    });
+    const items: UploadItem[] = selected.map((f, i) => ({
+      file: f,
+      label: displayName(slug, startIdx + i),
+      status: "waiting" as const,
+      progress: 0,
+    }));
 
     setUploadItems(items);
     setAllDone(false);
@@ -128,58 +125,34 @@ export default function VideoUploader({ courseId, slug, videos, onVideosChange }
   }
 
   async function runUpload(items: UploadItem[]) {
-    const pb = getPocketBase();
-    if (!pb.authStore.isValid) {
-      alert("Sesión expirada. Recarga la página e inicia sesión de nuevo.");
-      return;
-    }
-
     setUploading(true);
-    let newVideos = [...localVideos];
-
-    // Baseline = TODOS los archivos del record (vídeos + fotos de galería + lo
-    // que haya), no solo los vídeos. Si usáramos solo los vídeos, el diff
-    // agarraría una foto de la galería como si fuera el vídeo recién subido y
-    // se colaría una imagen en el listado de vídeos. Lo leemos fresco del
-    // server para no depender del orden en que se subieron fotos/vídeos.
-    const knownFiles = new Set<string>();
-    try {
-      const rec = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(courseId);
-      (rec.files ?? []).forEach((f) => knownFiles.add(f));
-    } catch {
-      // Fallback: al menos los vídeos que conocemos.
-      newVideos.forEach((v) => knownFiles.add(v.file));
-    }
+    let current = [...localVideos];
 
     for (let i = 0; i < items.length; i++) {
       setUploadItems((prev) =>
         prev.map((it, idx) => (idx === i ? { ...it, status: "uploading", progress: 0 } : it))
       );
       const item = items[i];
-      const type = normalizeVideoType(item.file);
-      const renamed = new File([item.file], item.newName, { type });
+      const order = current.length + 1;
+      const ext = item.file.name.split(".").pop()?.toLowerCase() ?? "mp4";
+      const name = displayName(slug, order);
+      const renamed = new File([item.file], `${slug}_${order}.${ext}`, {
+        type: normalizeVideoType(item.file),
+      });
       try {
-        const updatedRecord = await uploadWithProgress<CourseRecord>(courseId, "files", [renamed], (pct) => {
-          setUploadItems((prev) =>
-            prev.map((it, idx) => (idx === i ? { ...it, progress: pct } : it))
-          );
-        });
-
-        // Nombre real que asignó PocketBase (puede añadir sufijo aleatorio):
-        // el único archivo de `files` que no estaba antes en el baseline.
-        const actualFilename =
-          updatedRecord.files?.find((f) => !knownFiles.has(f)) ?? item.newName;
-        knownFiles.add(actualFilename); // mantener baseline al día para el próximo item
-
-        const order = newVideos.length + 1;
-        newVideos = [
-          ...newVideos,
-          {
-            file: actualFilename,
-            name: displayName(slug, order), // nombre de display: slug_N
-            order,
-          },
-        ];
+        // Un record por vídeo: si falla uno, los anteriores ya quedaron guardados.
+        const created = await createWithProgress<VideoRecord>(
+          COLLECTION_VIDEOS,
+          { course: courseId, name, order },
+          renamed,
+          (pct) => {
+            setUploadItems((prev) =>
+              prev.map((it, idx) => (idx === i ? { ...it, progress: pct } : it))
+            );
+          }
+        );
+        current = [...current, created];
+        setLocalVideos(current);
         setUploadItems((prev) =>
           prev.map((it, idx) => (idx === i ? { ...it, status: "done", progress: 100 } : it))
         );
@@ -191,65 +164,56 @@ export default function VideoUploader({ courseId, slug, videos, onVideosChange }
       }
     }
 
-    try {
-      await saveVideos(newVideos);
-      setLocalVideos(newVideos);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      alert(`Los vídeos se subieron pero no se pudo guardar el orden: ${msg}`);
-    }
-
     setUploading(false);
     setAllDone(true);
   }
 
-  async function saveVideos(newVideos: CourseVideo[]) {
+  /** Guarda order + name de los vídeos cuya posición cambió. */
+  async function persistOrder(updated: VideoRecord[], before: VideoRecord[]) {
     const pb = getPocketBase();
-    const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(courseId);
-    const updatedJson: CourseJson = { ...latest.json, videos: newVideos };
-    await pb.collection(COLLECTION_DATA).update(courseId, { json: updatedJson });
-    onVideosChange(newVideos);
+    const prevById = new Map(before.map((v) => [v.id, v]));
+    const changed = updated.filter((v) => {
+      const p = prevById.get(v.id);
+      return !p || p.order !== v.order || p.name !== v.name;
+    });
+    await Promise.all(
+      changed.map((v) =>
+        pb.collection(COLLECTION_VIDEOS).update(v.id, { order: v.order, name: v.name })
+      )
+    );
+  }
+
+  function renumber(list: VideoRecord[]): VideoRecord[] {
+    return list.map((v, i) => ({ ...v, order: i + 1, name: displayName(slug, i + 1) }));
   }
 
   async function moveVideo(idx: number, dir: -1 | 1) {
     const newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= localVideos.length) return;
     const prev = localVideos;
-    const updated = [...localVideos];
-    [updated[idx], updated[newIdx]] = [updated[newIdx], updated[idx]];
+    const swapped = [...localVideos];
+    [swapped[idx], swapped[newIdx]] = [swapped[newIdx], swapped[idx]];
     // Reordenar y recalcular display names según nueva posición
-    const reordered = updated.map((v, i) => ({
-      ...v,
-      order: i + 1,
-      name: displayName(slug, i + 1),
-    }));
+    const reordered = renumber(swapped);
     setLocalVideos(reordered);
     try {
-      await saveVideos(reordered);
+      await persistOrder(reordered, prev);
     } catch (err: unknown) {
       setLocalVideos(prev);
-      onVideosChange(prev);
       alert(`Error al reordenar: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  async function deleteVideo(video: CourseVideo) {
+  async function deleteVideo(video: VideoRecord) {
     const prev = localVideos;
-    const updated = localVideos
-      .filter((v) => v.file !== video.file)
-      .map((v, i) => ({
-        ...v,
-        order: i + 1,
-        name: displayName(slug, i + 1), // renumerar display names
-      }));
+    const updated = renumber(localVideos.filter((v) => v.id !== video.id));
     setLocalVideos(updated);
     try {
       const pb = getPocketBase();
-      await pb.collection(COLLECTION_DATA).update(courseId, { "files-": [video.file] });
-      await saveVideos(updated);
+      await pb.collection(COLLECTION_VIDEOS).delete(video.id); // borra también el archivo
+      await persistOrder(updated, prev);
     } catch (err: unknown) {
       setLocalVideos(prev);
-      onVideosChange(prev);
       alert(`Error al eliminar: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
@@ -284,7 +248,8 @@ export default function VideoUploader({ courseId, slug, videos, onVideosChange }
             <div key={idx}>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-mono text-marroncalido truncate flex-1 mr-2">
-                  {displayName(slug, localVideos.length + idx + 1)}
+                  {item.label}
+                  <span className="text-grisclarito"> · {formatBytes(item.file.size)}</span>
                 </span>
                 <span className={`text-xs font-mono flex-shrink-0 ${
                   item.status === "done"  ? "text-marron" :
@@ -327,14 +292,14 @@ export default function VideoUploader({ courseId, slug, videos, onVideosChange }
       {/* Lista de vídeos */}
       <div className="space-y-2">
         {localVideos.map((v, idx) => {
-          const dur = durations[v.file];
-          const err = videoErrors[v.file];
-          const loaded = videoLoaded[v.file];
+          const dur = durations[v.id];
+          const err = videoErrors[v.id];
+          const loaded = videoLoaded[v.id];
           const ext = v.file.split(".").pop()?.toLowerCase() ?? "";
           const isUnsupportedExt = POTENTIALLY_UNSUPPORTED.includes(ext);
 
           return (
-            <div key={v.file} className="bg-blanco shadow-sm px-4 py-3 flex items-center gap-3">
+            <div key={v.id} className="bg-blanco shadow-sm px-4 py-3 flex items-center gap-3">
               <span className="text-xs text-grisclarito w-5 text-right flex-shrink-0">{idx + 1}</span>
 
               {/* Thumbnail — click abre el reproductor */}
@@ -351,13 +316,13 @@ export default function VideoUploader({ courseId, slug, videos, onVideosChange }
                   </div>
                 ) : (
                   <video
-                    src={videoUrl(v.file)}
+                    src={videoUrl(v)}
                     className="w-24 h-14 object-cover bg-grisoscuro rounded-sm"
                     preload="metadata"
                     playsInline
                     muted
-                    onLoadedMetadata={(e) => handleVideoLoadedMetadata(v.file, e)}
-                    onError={() => handleVideoError(v.file)}
+                    onLoadedMetadata={(e) => handleVideoLoadedMetadata(v.id, e)}
+                    onError={() => handleVideoError(v)}
                   />
                 )}
                 {/* Overlay play al hover */}
@@ -426,7 +391,7 @@ export default function VideoUploader({ courseId, slug, videos, onVideosChange }
           <div className="w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs text-grisoscuro font-mono">
-                {playingVideo.name || displayName(slug, localVideos.findIndex(v => v.file === playingVideo.file) + 1)}
+                {playingVideo.name || displayName(slug, localVideos.findIndex(v => v.id === playingVideo.id) + 1)}
               </p>
               <button
                 onClick={() => setPlayingVideo(null)}
@@ -436,8 +401,8 @@ export default function VideoUploader({ courseId, slug, videos, onVideosChange }
               </button>
             </div>
             <video
-              key={playingVideo.file}
-              src={videoUrl(playingVideo.file)}
+              key={playingVideo.id}
+              src={videoUrl(playingVideo)}
               controls
               autoPlay
               playsInline

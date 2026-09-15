@@ -7,70 +7,66 @@
 | Framework | Next.js 15 (App Router) |
 | Lenguaje | TypeScript |
 | Estilos | Tailwind CSS (misma paleta que `andrea-moro`) |
-| Base de datos / Auth | PocketBase (pocketbase@^0.21.x) |
+| Base de datos / Auth | PocketBase ≥ 0.23 (SDK `pocketbase@^0.26`) |
 | Package manager | pnpm |
-| Email (futuro) | Resend (SMTP en PocketBase settings) |
 | Deploy | Vercel |
+
+Sin token de superusuario en las apps: las páginas públicas leen como anónimo
+(las API rules permiten leer lo publicado) y el panel admin usa la sesión del
+usuario admin (cookie `pb_auth`, validada contra PocketBase con `authRefresh`).
 
 ---
 
 ## Colecciones PocketBase
 
-### `andreamoro_user` (Type: Auth)
+`ADMIN` = `@request.auth.collectionName = "andreamoro_user"`
+(usuario único; si hubiera más de uno, comparten los records).
+
+### `andreamoro_user` (Auth)
+Solo login del panel. Registro cerrado.
+- list/view: `id = @request.auth.id` · create/update/delete: `null` (solo superuser)
+
+### `andreamoro_courses` (Base) — un CURSO
 | Campo | Tipo | Notas |
 |---|---|---|
-| id | Text | Auto |
-| email | Email | Único |
-| password | Password | Hidden |
-| tokenKey | Text | Hidden, único |
-| emailVisibility | Bool | |
-| verified | Bool | |
-| admin | Bool | `true` → acceso admin |
-| json | JSON | Datos extra opcionales |
-| created / updated | Date | Auto |
+| title | text | |
+| description | text | |
+| price | number ≥ 0 | ARS |
+| slug | text, único, `^[a-z0-9-]+$` | se fija al crear; editar el título no lo cambia |
+| token | text `^[0-9a-f]{8}$` | parte del link (no se valida) |
+| published | bool | |
 
-### `andreamoro_data` (Type: Base) — representa un CURSO
-| Campo | Tipo | Notas |
-|---|---|---|
-| id | Text | Auto |
-| files | File (Multiple) | Los archivos de video subidos |
-| title | Text | Indexado, filtrable |
-| description | Text | Indexado, filtrable |
-| json | JSON | Metadata flexible (ver estructura abajo) |
-| created / updated | Date | Auto |
+Rules: list/view `published = true || ADMIN` · create/update/delete `ADMIN`
 
-**Estructura del campo `json`:**
-```json
-{
-  "published": true,
-  "users": ["user_id_1", "user_id_2"],
-  "videos": [
-    { "file": "video1.mp4", "name": "Introducción", "order": 1 },
-    { "file": "video2.mp4", "name": "Técnica base",  "order": 2 }
-  ]
-}
-```
-- `published`: si es `false`, el curso no aparece para los usuarios (el admin sí lo ve)
-- `users`: IDs de `andreamoro_user` con acceso al curso
-- `videos`: orden y nombre de cada video; `file` debe coincidir con el nombre subido en `files`
+### `andreamoro_videos` (Base) — un VÍDEO
+| course (relation → courses, cascade) | file (single, máx 10 GB) | name | order |
+
+Rules: list/view `course.published = true || ADMIN` · write `ADMIN`
+
+### `andreamoro_media` (Base) — archivos sueltos
+| course (relation opcional, cascade) | kind: `resource` · `gallery` · `site_gallery` · `site_andrea` | file (single, máx 10 GB) | name | original | order |
+
+Rules: list/view `course = "" || course.published = true || ADMIN` · write `ADMIN`
+
+`andreamoro_data` es la colección anterior (json + campo `files`). Quedó como
+backup tras `MIGRATE_V2` y ninguna app la usa.
 
 ---
 
 ## Variables de entorno
 
-Archivo: `.env` (local, nunca commitear — está en `.gitignore`)
-
+Vercel (users-app y tienda):
 ```bash
-# URL pública de PocketBase
 NEXT_PUBLIC_PB_URL=https://pocketbase.vmoliver.cloud
-
-# Nombres de colecciones
-NEXT_PUBLIC_PB_USERS=andreamoro_user
-NEXT_PUBLIC_PB_DATA=andreamoro_data
-
-# Token admin — solo server-side
-PB_ADMIN_TOKEN=...
+NEXT_PUBLIC_PB_USERS=andreamoro_user        # opcional (default)
+NEXT_PUBLIC_PB_COURSES=andreamoro_courses   # opcional (default)
+NEXT_PUBLIC_PB_VIDEOS=andreamoro_videos     # opcional (default)
+NEXT_PUBLIC_PB_MEDIA=andreamoro_media       # opcional (default)
+NEXT_PUBLIC_SITE_URL=https://cursos.andreamorotienda.com
 ```
+
+Solo `.env` local (scripts): `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD`, y para la
+migración `PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`.
 
 ---
 
@@ -78,99 +74,42 @@ PB_ADMIN_TOKEN=...
 
 | Ruta | Acceso | Descripción |
 |---|---|---|
-| `/` | Público | Login |
-| `/dashboard` | Autenticado | Lista de cursos asignados |
-| `/admin` | Admin only | Panel de gestión |
-| `/curso/[id]` | Autenticado | Reproductor de video (próximo) |
+| `/{slug}_{token}` | Público + clave global | Presentación → clave → reproductor, lista de vídeos, recursos y galería |
+| `/admin` | Público | Login |
+| `/admin/cursos` | Admin | Lista de cursos + galerías del sitio |
+| `/admin/cursos/nuevo` | Admin | Crear curso (slug único en minúsculas) |
+| `/admin/cursos/[id]` | Admin | Editar curso, vídeos, recursos, galería |
 
 ---
 
-## Flujo de autenticación
+## Subida de archivos
 
-```
-1. Usuario introduce email + contraseña en /
-2. LoginForm llama pb.collection('andreamoro_user').authWithPassword(...)
-3. PocketBase devuelve token JWT + record del usuario
-4. El authStore.onChange hook exporta la sesión como cookie `pb_auth`
-5. El middleware de Next.js lee esa cookie en cada request
-6. Server Components cargan pb.authStore desde la misma cookie
-7. Al hacer logout, pb.authStore.clear() → cookie vacía → middleware redirige a /
-```
+`src/lib/upload.ts` → `createWithProgress`: un record nuevo por archivo (POST),
+progreso real por XHR, Wake Lock para que iOS no bloquee la pantalla, un
+reintento si se corta la conexión, y mensajes claros (tamaño, sesión, red).
+
+Si igual falla con vídeos muy pesados, revisar en el servidor que el proxy
+(Caddy) no limite `request_body max_size` ni corte por timeout.
 
 ---
 
-## Modelo de acceso a cursos
+## Scripts (`.bat`, requieren ffmpeg)
 
-- **Admin**: ve todos los cursos en `andreamoro_data`
-- **Usuario**: ve solo los cursos donde su `id` aparece en el campo `field`
-- La asignación se hace desde PocketBase Admin UI editando el campo `field` del curso
+| Script | Qué hace |
+|---|---|
+| `MIGRATE_V2.bat [--apply]` | Migra `andreamoro_data` → colecciones v2 (mismos ids/slugs/tokens). Simula por defecto. |
+| `CONVERT_VIDEOS.bat [--apply]` | Deja todos los vídeos reproducibles en cualquier navegador sin cambiar resolución/fps: skip / remux faststart / H.264 CRF 18 (HDR → SDR). Simula por defecto. |
+| `UPLOAD_BATCH.bat <carpeta> <slug> [--append\|--replace]` | Sube una carpeta de vídeos a un curso con la misma conversión. |
 
----
-
-## Roadmap de features futuras
-
-### Fase 2 — CRUD de cursos desde la app
-- Página `/admin/nuevo-curso`: formulario para crear un curso, subir videos
-- Página `/admin/curso/[id]`: editar título, descripción, asignar/desasignar usuarios, reordenar videos
-
-### Fase 3 — Reproductor de video
-- Ruta `/curso/[id]` con listado de videos del curso
-- Reproductor basado en **Plyr.js** (open source, MIT) — `npm install plyr`
-- Sirve los archivos de PocketBase con auth (URLs firmadas o con token)
-- Progreso del usuario (campo en `andreamoro_user.json` o nueva colección `progress`)
-
-### Fase 4 — Registro autónomo y recuperación de contraseña
-- Configurar **Resend** como SMTP en PocketBase Settings → Mail
-  - Host: `smtp.resend.com`, Puerto: `465`, Usuario: `resend`, Pass: API key
-- Añadir enlace "Olvidé mi contraseña" → llama a
-  `pb.collection('andreamoro_user').requestPasswordReset(email)`
-- PocketBase envía email de reset automáticamente
-- Página `/reset-password?token=...` para completar el reset
-- Página `/register` (opcional) para auto-registro con verificación de email
-
-### Fase 5 — Diseño final
-- Homogeneizar con la estética de `andreamorotienda.com`
-- Tipografía, espaciados, favicon, OG image
+Los scripts viejos (`seed-prices`, `ensure-published`, `fix-flores-nepal`,
+`clean-old-keys`, `upload-gallery`, `convert-videos`) trabajan sobre
+`andreamoro_data` y quedaron solo como histórico.
 
 ---
 
 ## Setup local
 
 ```bash
-# 1. Instalar dependencias (requiere pnpm — instálalo con: npm install -g pnpm)
 pnpm install
-
-# 2. Configurar env
-# Editar .env con tus valores (ya existe con las credenciales de PocketBase)
-
-# 3. Arrancar
-pnpm dev
-# → http://localhost:3000
+pnpm dev   # → http://localhost:3000
 ```
-
-## Deploy en Vercel
-
-Vercel detecta pnpm automáticamente por la presencia de `pnpm-lock.yaml` y el campo
-`"packageManager"` en package.json. El `vercel.json` también lo fuerza explícitamente.
-
-```bash
-# Conectar repo en vercel.com → Import Project
-# Añadir variables de entorno en: Vercel Dashboard > Settings > Environment Variables
-# Variables necesarias (ver .env.example):
-#   NEXT_PUBLIC_PB_URL
-#   NEXT_PUBLIC_PB_USERS
-#   NEXT_PUBLIC_PB_DATA
-#   PB_ADMIN_TOKEN  (solo server-side)
-```
-
----
-
-## Notas de seguridad
-
-- Las cookies de sesión (`pb_auth`) son `HttpOnly: false` en desarrollo porque Next.js
-  client components necesitan escribirlas via `document.cookie`. En producción, considerar
-  usar una API Route para setear cookies HttpOnly verdaderas.
-- El `PB_ADMIN_TOKEN` **nunca** debe estar en variables `NEXT_PUBLIC_*`.
-- Habilitar **API Rules** en PocketBase para cada colección:
-  - `andreamoro_user`: solo admins pueden listar todos los usuarios
-  - `andreamoro_data`: solo ver si `@request.auth.id != "" && (field ~ @request.auth.id || @request.auth.admin = true)`

@@ -2,18 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { getPocketBase, COLLECTION_DATA } from "@/lib/pocketbase-browser";
-import { generateToken } from "@/lib/course-utils";
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-");
-}
+import { getPocketBase, COLLECTION_COURSES } from "@/lib/pocketbase-browser";
+import { generateToken, slugify, uniqueSlug, type CourseRecord } from "@/lib/course-utils";
 
 export default function NuevoCursoForm() {
   const router = useRouter();
@@ -22,6 +12,7 @@ export default function NuevoCursoForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Siempre en minúsculas (slugify) — el link final es /{slug}_{token}.
   const slug = slugify(title);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -29,19 +20,23 @@ export default function NuevoCursoForm() {
     setError("");
     setLoading(true);
 
-    const courseToken = generateToken();
-
     try {
       const pb = getPocketBase();
-      const record = await pb.collection(COLLECTION_DATA).create({
+      // El slug se fija AHORA y no cambia al editar el título después.
+      // Si ya existe (o empieza igual), se agrega -2, -3…
+      const existing = await pb.collection(COLLECTION_COURSES).getFullList<Pick<CourseRecord, "slug">>({
+        fields: "slug",
+        filter: pb.filter("slug ~ {:base}", { base: slug }),
+      });
+      const finalSlug = uniqueSlug(slug, existing.map((c) => c.slug));
+
+      const record = await pb.collection(COLLECTION_COURSES).create({
         title: title.trim(),
         description,
-        json: {
-          published: true,
-          slug,
-          token: courseToken,
-          videos: [],
-        },
+        price: 0,
+        slug: finalSlug,
+        token: generateToken(),
+        published: true,
       });
       router.push(`/admin/cursos/${record.id}`);
     } catch {

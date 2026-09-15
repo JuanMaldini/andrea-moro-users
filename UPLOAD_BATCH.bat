@@ -9,7 +9,7 @@ if not "%~1"=="" set SOURCE_DIR=%~1
 if not "%~2"=="" set SLUG=%~2
 
 cd /d "%~dp0"
-node scripts\UPLOAD_BATCH.mjs "%SOURCE_DIR%" %SLUG%
+node scripts\UPLOAD_BATCH.mjs "%SOURCE_DIR%" %SLUG% %3
 echo.
 echo ===========================================
 echo  Upload batch terminado. Log en scripts\_logs\

@@ -1,56 +1,31 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { getPocketBase, COLLECTION_DATA } from "@/lib/pocketbase-browser";
-import { uploadWithProgress } from "@/lib/upload";
+import { getPocketBase, COLLECTION_MEDIA, pbFileUrl } from "@/lib/pocketbase-browser";
+import { createWithProgress } from "@/lib/upload";
 import {
   resourceKind,
   stripExtension,
-  type CourseRecord,
-  type CourseJson,
-  type CourseResource,
+  type MediaRecord,
 } from "@/lib/course-utils";
 
 interface Props {
   courseId: string;
-  course: CourseRecord;
-  resources: CourseResource[];
-  onResourcesChange: (resources: CourseResource[]) => void;
+  resources: MediaRecord[];
 }
 
-export default function ResourcesUploader({
-  courseId, course, resources, onResourcesChange,
-}: Props) {
-  const [items, setItems] = useState<CourseResource[]>(resources);
+export default function ResourcesUploader({ courseId, resources }: Props) {
+  const [items, setItems] = useState<MediaRecord[]>(resources);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Lista de TODOS los archivos del record (vídeos + fotos + recursos). Sirve para
-  // hacer el diff y saber el nombre real con el que PocketBase guardó cada recurso.
-  const knownFiles = useRef<string[]>(course.files ?? []);
   // Debounce para guardar los nombres de display mientras se escriben.
-  const nameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nameTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  const pbUrl = (process.env.NEXT_PUBLIC_PB_URL ?? "").replace(/\/$/, "");
-
-  function fileUrl(filename: string) {
-    return `${pbUrl}/api/files/${COLLECTION_DATA}/${courseId}/${filename}`;
-  }
-
-  function commit(updated: CourseResource[]) {
-    setItems(updated);
-    onResourcesChange(updated);
-  }
-
-  async function persistResources(updated: CourseResource[]) {
-    const pb = getPocketBase();
-    // Lee el json más reciente para no pisar cambios de vídeos/galería hechos en
-    // la misma sesión, y mezcla solo la parte de resources.
-    const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(courseId);
-    const updatedJson: CourseJson = { ...latest.json, resources: updated };
-    await pb.collection(COLLECTION_DATA).update(courseId, { json: updatedJson });
+  function fileUrl(r: MediaRecord) {
+    return pbFileUrl(COLLECTION_MEDIA, r.id, r.file);
   }
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -78,46 +53,27 @@ export default function ResourcesUploader({
 
     let current = [...items];
     try {
-      // Refresca el baseline con TODOS los archivos actuales del record antes de
-      // empezar. Sin esto, si en la misma sesión se subió un vídeo o una foto
-      // después de montar el componente, el diff lo tomaría como "archivo nuevo"
-      // y se colaría en la lista de recursos.
-      try {
-        const pb = getPocketBase();
-        const latest = await pb.collection(COLLECTION_DATA).getOne<CourseRecord>(courseId);
-        knownFiles.current = latest.files ?? knownFiles.current;
-      } catch {
-        /* si falla, seguimos con el baseline que teníamos */
-      }
-
       for (let i = 0; i < selected.length; i++) {
         const file = selected[i];
-        // Sube al campo único `files` (files+ → no pisa vídeos ni fotos).
-        const result = await uploadWithProgress<{ files: string[] }>(
-          courseId,
-          "files",
-          [file],
+        // Un record por recurso: si hay error de red a mitad, los anteriores no se pierden.
+        const created = await createWithProgress<MediaRecord>(
+          COLLECTION_MEDIA,
+          {
+            course: courseId,
+            kind: "resource",
+            name: stripExtension(file.name),
+            original: file.name,
+            order: current.length + 1,
+          },
+          file,
           (pct) => {
             // progreso global aproximado entre todos los recursos
             const base = Math.round((i / selected.length) * 100);
             setProgress(base + Math.round(pct / selected.length));
           }
         );
-        const all = result.files ?? [];
-        // El nombre real del recurso recién subido = el archivo nuevo en `files`.
-        const added = all.filter((f) => !knownFiles.current.includes(f));
-        knownFiles.current = all;
-
-        const newOnes: CourseResource[] = added.map((filename, k) => ({
-          file: filename,
-          name: stripExtension(file.name),
-          original: file.name,
-          order: current.length + k + 1,
-        }));
-        current = [...current, ...newOnes];
-        commit(current);
-        // Guarda tras cada archivo: si hay error de red a mitad, los anteriores no se pierden.
-        await persistResources(current);
+        current = [...current, created];
+        setItems(current);
       }
       setProgress(100);
     } catch (err) {
@@ -128,31 +84,36 @@ export default function ResourcesUploader({
     }
   }
 
-  function handleNameChange(filename: string, value: string) {
-    const updated = items.map((r) => (r.file === filename ? { ...r, name: value } : r));
-    commit(updated);
-    if (nameTimer.current) clearTimeout(nameTimer.current);
-    nameTimer.current = setTimeout(() => {
-      persistResources(updated).catch(() => setError("No se pudo guardar el nombre."));
+  function handleNameChange(id: string, value: string) {
+    setItems((prev) => prev.map((r) => (r.id === id ? { ...r, name: value } : r)));
+    if (nameTimers.current[id]) clearTimeout(nameTimers.current[id]);
+    nameTimers.current[id] = setTimeout(() => {
+      getPocketBase()
+        .collection(COLLECTION_MEDIA)
+        .update(id, { name: value })
+        .catch(() => setError("No se pudo guardar el nombre."));
     }, 700);
   }
 
-  async function deleteResource(filename: string) {
+  async function deleteResource(resource: MediaRecord) {
     const prev = items;
     const updated = items
-      .filter((r) => r.file !== filename)
+      .filter((r) => r.id !== resource.id)
       .map((r, i) => ({ ...r, order: i + 1 }));
     // Optimista: quita el recurso de la UI al instante.
-    commit(updated);
-    knownFiles.current = knownFiles.current.filter((f) => f !== filename);
+    setItems(updated);
     try {
       const pb = getPocketBase();
-      await pb.collection(COLLECTION_DATA).update(courseId, { "files-": [filename] });
-      await persistResources(updated);
+      await pb.collection(COLLECTION_MEDIA).delete(resource.id);
+      const prevOrder = new Map(prev.map((r) => [r.id, r.order]));
+      await Promise.all(
+        updated
+          .filter((r) => prevOrder.get(r.id) !== r.order)
+          .map((r) => pb.collection(COLLECTION_MEDIA).update(r.id, { order: r.order }))
+      );
     } catch {
       // Revierte si la red falló.
-      knownFiles.current = [...knownFiles.current, filename];
-      commit(prev);
+      setItems(prev);
       alert("Error al eliminar el recurso.");
     }
   }
@@ -206,17 +167,17 @@ export default function ResourcesUploader({
             const ext = r.file.split(".").pop()?.toLowerCase() ?? "";
 
             return (
-              <div key={r.file}>
+              <div key={r.id}>
                 <div className="relative group aspect-square bg-grisoscuro overflow-hidden">
                   {kind === "image" ? (
                     <img
-                      src={fileUrl(r.file)}
+                      src={fileUrl(r)}
                       alt={r.name}
                       className="w-full h-full object-cover"
                     />
                   ) : kind === "video" ? (
                     <video
-                      src={fileUrl(r.file)}
+                      src={fileUrl(r)}
                       className="w-full h-full object-cover"
                       preload="metadata"
                       playsInline
@@ -229,7 +190,7 @@ export default function ResourcesUploader({
                     </div>
                   )}
                   <button
-                    onClick={() => deleteResource(r.file)}
+                    onClick={() => deleteResource(r)}
                     className="absolute top-1 right-1 bg-marron text-blanco text-xs w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rojo"
                   >
                     ×
@@ -241,7 +202,7 @@ export default function ResourcesUploader({
                   type="text"
                   value={r.name}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    handleNameChange(r.file, e.target.value)
+                    handleNameChange(r.id, e.target.value)
                   }
                   className="w-full mt-1 px-1.5 py-1 border border-grisoscuro bg-blanco text-xs text-marroncalido focus:outline-none focus:border-marron transition-colors"
                 />

@@ -1,10 +1,16 @@
 import { notFound } from "next/navigation";
-import { createAdminClient, COLLECTION_DATA, getPbUrl } from "@/lib/pocketbase";
+import {
+  createPublicClient,
+  COLLECTION_COURSES,
+  COLLECTION_VIDEOS,
+  COLLECTION_MEDIA,
+  getPbUrl,
+} from "@/lib/pocketbase";
 import {
   parseCourseAccess,
   type CourseRecord,
-  type CourseVideo,
-  type CourseResource,
+  type VideoRecord,
+  type MediaRecord,
 } from "@/lib/course-utils";
 import CoursePageClient from "./CoursePageClient";
 
@@ -18,39 +24,38 @@ export default async function CourseAccessPage({ params }: Props) {
   if (!parsed) return notFound();
 
   const { slug, token } = parsed;
+  const pb = createPublicClient();
 
-  let course: CourseRecord | null = null;
+  let course: CourseRecord;
+  let videos: VideoRecord[] = [];
+  let media: MediaRecord[] = [];
   try {
-    const pb = createAdminClient();
-    const results = await pb
-      .collection(COLLECTION_DATA)
-      .getFullList<CourseRecord>({ filter: `json.slug = "${slug}"` });
-    course = results[0] ?? null;
+    course = await pb
+      .collection(COLLECTION_COURSES)
+      .getFirstListItem<CourseRecord>(pb.filter("slug = {:slug}", { slug }));
+    [videos, media] = await Promise.all([
+      pb.collection(COLLECTION_VIDEOS).getFullList<VideoRecord>({
+        filter: pb.filter("course = {:id}", { id: course.id }),
+        sort: "order",
+      }),
+      pb.collection(COLLECTION_MEDIA).getFullList<MediaRecord>({
+        filter: pb.filter("course = {:id}", { id: course.id }),
+        sort: "order",
+      }),
+    ]);
   } catch {
     return notFound();
   }
 
-  if (!course) return notFound();
-
-  const videos: CourseVideo[] = (course.json?.videos ?? []).sort(
-    (a, b) => a.order - b.order
-  );
-
-  const resources: CourseResource[] = [...(course.json?.resources ?? [])].sort(
-    (a, b) => a.order - b.order
-  );
-
   return (
     <CoursePageClient
-      courseId={course.id}
       token={token}
       title={course.title}
       description={course.description}
       videos={videos}
-      resources={resources}
+      resources={media.filter((m) => m.kind === "resource")}
+      gallery={media.filter((m) => m.kind === "gallery")}
       pbUrl={getPbUrl()}
-      collectionName={COLLECTION_DATA}
-      gallery={course.json?.gallery ?? []}
     />
   );
 }

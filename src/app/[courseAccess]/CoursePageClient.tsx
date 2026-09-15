@@ -1,37 +1,37 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { resourceKind, type CourseVideo, type CourseResource } from "@/lib/course-utils";
+import { resourceKind, type VideoRecord, type MediaRecord } from "@/lib/course-utils";
 import { COURSE_PASSWORD } from "@/lib/auth";
+import { COLLECTION_VIDEOS, COLLECTION_MEDIA } from "@/lib/collections";
+import CoursePlayer from "./CoursePlayer";
 
 type State = "presentation" | "access" | "videos";
 
 interface Props {
-  courseId: string;
   token: string;
   title: string;
   description: string;
-  videos: CourseVideo[];
-  resources: CourseResource[];
+  videos: VideoRecord[];
+  resources: MediaRecord[];
+  gallery: MediaRecord[];
   pbUrl: string;
-  collectionName: string;
-  gallery: string[];
 }
 
 const SESSION_KEY = "course_access_global";
 
 export default function CoursePageClient({
-  courseId, token, title, description, videos, resources,
-  pbUrl, collectionName, gallery,
+  title, description, videos, resources, pbUrl, gallery,
 }: Props) {
   const sessionKey = SESSION_KEY;
   const [state, setState] = useState<State>("presentation");
   const [clave, setClave] = useState("");
   const [error, setError] = useState("");
-  const [modalVideo, setModalVideo] = useState<CourseVideo | null>(null);
-  const [modalVideoError, setModalVideoError] = useState<string | null>(null);
-  const [previewResource, setPreviewResource] = useState<CourseResource | null>(null);
-  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+  // Vídeo seleccionado en el reproductor (arranca con el primero, sin autoplay).
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(videos[0]?.id ?? null);
+  const [userPicked, setUserPicked] = useState(false);
+  const [previewResource, setPreviewResource] = useState<MediaRecord | null>(null);
+  const [lightboxImg, setLightboxImg] = useState<MediaRecord | null>(null);
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -45,7 +45,7 @@ export default function CoursePageClient({
   // Close modal on Escape
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") { setModalVideo(null); setPreviewResource(null); closeLightbox(); }
+      if (e.key === "Escape") { setPreviewResource(null); closeLightbox(); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -67,7 +67,7 @@ export default function CoursePageClient({
     }
   }
 
-  function openLightbox(img: string) {
+  function openLightbox(img: MediaRecord) {
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     setLightboxImg(img);
     // Un frame de margen para que el elemento esté en el DOM antes de la transición
@@ -79,14 +79,20 @@ export default function CoursePageClient({
     closeTimerRef.current = setTimeout(() => setLightboxImg(null), 220);
   }
 
-  function fileUrl(filename: string) {
-    return `${pbUrl}/api/files/${collectionName}/${courseId}/${filename}`;
+  function mediaUrl(m: MediaRecord) {
+    return `${pbUrl}/api/files/${COLLECTION_MEDIA}/${m.id}/${m.file}`;
+  }
+
+  function videoUrl(v: VideoRecord) {
+    return `${pbUrl}/api/files/${COLLECTION_VIDEOS}/${v.id}/${v.file}`;
   }
 
   // `?download=1` hace que PocketBase responda con Content-Disposition: attachment.
-  function downloadUrl(filename: string) {
-    return `${fileUrl(filename)}?download=1`;
+  function downloadUrl(m: MediaRecord) {
+    return `${mediaUrl(m)}?download=1`;
   }
+
+  const activeVideo = videos.find((v) => v.id === activeVideoId) ?? null;
 
   return (
     <main className="min-h-screen bg-vanilla">
@@ -104,7 +110,7 @@ export default function CoursePageClient({
             <div className="relative h-48 bg-grisoscuro flex items-center justify-center overflow-hidden">
               {gallery.length > 0 && (
                 <img
-                  src={fileUrl(gallery[0])}
+                  src={mediaUrl(gallery[0])}
                   alt=""
                   draggable={false}
                   onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
@@ -173,23 +179,38 @@ export default function CoursePageClient({
               {videos.length} lección{videos.length !== 1 ? "es" : ""}
             </h2>
 
+            {/* REPRODUCTOR — arriba de la lista */}
+            {activeVideo && (
+              <div className="mb-4 shadow-sm">
+                <CoursePlayer
+                  src={videoUrl(activeVideo)}
+                  title={activeVideo.name}
+                  autoPlay={userPicked}
+                />
+              </div>
+            )}
+
             <div className="bg-blanco shadow-sm divide-y divide-grisoscuro">
-              {videos.map((video, idx) => (
-                <button
-                  key={video.file}
-                  onClick={() => { setModalVideoError(null); setModalVideo(video); }}
-                  className="w-full text-left px-4 py-3 flex items-center gap-4 hover:bg-vanilla transition-colors"
-                >
-                  {/* Número */}
-                  <span className="text-xs w-5 text-right flex-shrink-0 text-grisclarito">{idx + 1}</span>
+              {videos.map((video, idx) => {
+                const active = video.id === activeVideoId;
+                return (
+                  <button
+                    key={video.id}
+                    onClick={() => { setUserPicked(true); setActiveVideoId(video.id); }}
+                    aria-current={active ? "true" : undefined}
+                    className={`w-full text-left px-4 py-3 flex items-center gap-4 transition-colors ${active ? "bg-vanilla" : "hover:bg-vanilla"}`}
+                  >
+                    {/* Número */}
+                    <span className={`text-xs w-5 text-right flex-shrink-0 ${active ? "text-marron" : "text-grisclarito"}`}>{idx + 1}</span>
 
-                  {/* Nombre */}
-                  <span className="flex-1 text-sm text-marroncalido text-left leading-snug">{video.name}</span>
+                    {/* Nombre */}
+                    <span className={`flex-1 text-sm text-left leading-snug ${active ? "text-marron font-medium" : "text-marroncalido"}`}>{video.name}</span>
 
-                  {/* Icono play */}
-                  <span className="text-xs text-grisclarito flex-shrink-0">▶</span>
-                </button>
-              ))}
+                    {/* Icono play */}
+                    <span className={`text-xs flex-shrink-0 ${active ? "text-marron" : "text-grisclarito"}`}>▶</span>
+                  </button>
+                );
+              })}
               {videos.length === 0 && (
                 <p className="px-6 py-8 text-xs text-grisclarito text-center">Vídeos en preparación.</p>
               )}
@@ -207,21 +228,21 @@ export default function CoursePageClient({
 
                     return (
                       <button
-                        key={r.file}
+                        key={r.id}
                         onClick={() => setPreviewResource(r)}
                         title={r.name}
                         className="aspect-square bg-grisoscuro overflow-hidden focus:outline-none hover:shadow transition-shadow duration-150"
                       >
                         {kind === "image" ? (
                           <img
-                            src={fileUrl(r.file)}
+                            src={mediaUrl(r)}
                             alt={r.name}
                             draggable={false}
                             className="w-full h-full object-cover select-none"
                           />
                         ) : kind === "video" ? (
                           <video
-                            src={fileUrl(r.file)}
+                            src={mediaUrl(r)}
                             className="w-full h-full object-cover"
                             preload="metadata"
                             playsInline
@@ -249,14 +270,14 @@ export default function CoursePageClient({
           <p className="text-xs uppercase tracking-widest text-grisclarito mb-4 max-w-xl mx-auto">Galería</p>
           {/* 2 columnas en móvil, 3 desde sm */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-w-[720px] mx-auto">
-            {gallery.map((filename) => (
+            {gallery.map((photo) => (
               <button
-                key={filename}
-                onClick={() => openLightbox(filename)}
+                key={photo.id}
+                onClick={() => openLightbox(photo)}
                 className="aspect-square bg-grisoscuro overflow-hidden focus:outline-none hover:shadow transition-shadow duration-150"
               >
                 <img
-                  src={fileUrl(filename)}
+                  src={mediaUrl(photo)}
                   alt=""
                   draggable={false}
                   className="w-full h-full object-cover select-none"
@@ -277,7 +298,7 @@ export default function CoursePageClient({
             {/* Cabecera: descargar (izquierda, solo icono) + cerrar */}
             <div className="flex items-center justify-between gap-3 mb-3">
               <a
-                href={downloadUrl(previewResource.file)}
+                href={downloadUrl(previewResource)}
                 download={previewResource.original}
                 title="Descargar"
                 aria-label="Descargar"
@@ -300,7 +321,7 @@ export default function CoursePageClient({
               if (kind === "image") {
                 return (
                   <img
-                    src={fileUrl(previewResource.file)}
+                    src={mediaUrl(previewResource)}
                     alt={previewResource.name}
                     draggable={false}
                     className="w-full max-h-[75vh] object-contain select-none"
@@ -310,8 +331,8 @@ export default function CoursePageClient({
               if (kind === "video") {
                 return (
                   <video
-                    key={previewResource.file}
-                    src={fileUrl(previewResource.file)}
+                    key={previewResource.id}
+                    src={mediaUrl(previewResource)}
                     controls
                     autoPlay
                     playsInline
@@ -322,8 +343,8 @@ export default function CoursePageClient({
               if (kind === "pdf") {
                 return (
                   <iframe
-                    key={previewResource.file}
-                    src={fileUrl(previewResource.file)}
+                    key={previewResource.id}
+                    src={mediaUrl(previewResource)}
                     title={previewResource.name}
                     className="w-full h-[75vh] bg-blanco block border-0"
                   />
@@ -358,7 +379,7 @@ export default function CoursePageClient({
         >
           {/* stopPropagation solo en la imagen: el padding queda libre para cerrar */}
           <img
-            src={fileUrl(lightboxImg)}
+            src={mediaUrl(lightboxImg)}
             alt=""
             draggable={false}
             onClick={(e) => e.stopPropagation()}
@@ -374,57 +395,6 @@ export default function CoursePageClient({
         </div>
       )}
 
-      {/* Modal de vídeo */}
-      {modalVideo && (
-        <div
-          className="fixed inset-0 z-50 bg-negro bg-opacity-90 flex items-center justify-center px-4 py-8"
-          onClick={() => setModalVideo(null)}
-        >
-          <div className="w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
-            {/* Cabecera modal */}
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs text-grisoscuro uppercase tracking-widest truncate flex-1 mr-4">
-                {modalVideo.name}
-              </p>
-              <button
-                onClick={() => setModalVideo(null)}
-                className="text-grisoscuro hover:text-blanco text-xl leading-none transition-colors flex-shrink-0"
-                aria-label="Cerrar"
-              >
-                ×
-              </button>
-            </div>
-
-            {/* Reproductor */}
-            <video
-              key={fileUrl(modalVideo.file)}
-              src={fileUrl(modalVideo.file)}
-              controls
-              autoPlay
-              playsInline
-              className="w-full aspect-video bg-negro block"
-              onError={(e) => {
-                const err = (e.currentTarget as HTMLVideoElement).error;
-                const msgs: Record<number, string> = {
-                  2: "Error de red al cargar el vídeo. Comprueba tu conexión.",
-                  3: "El navegador no puede decodificar este vídeo. Puede que esté en formato H.265/HEVC (iPhone). Prueba con Safari o convierte el vídeo.",
-                  4: "Este vídeo no está disponible o el formato no es soportado por tu navegador.",
-                };
-                const code = err?.code ?? 0;
-                setModalVideoError(msgs[code] ?? "No se pudo reproducir el vídeo.");
-              }}
-              onPlay={() => setModalVideoError(null)}
-            />
-
-            {/* Mensaje de error de reproducción */}
-            {modalVideoError && (
-              <div className="mt-3 px-4 py-3 bg-rojo/10 border border-rojo/40 text-rojo text-xs leading-relaxed rounded">
-                ⚠ {modalVideoError}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </main>
   );
 }

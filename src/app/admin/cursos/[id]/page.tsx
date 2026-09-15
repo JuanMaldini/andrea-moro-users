@@ -2,10 +2,11 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import {
   createServerClient,
-  createAdminClient,
-  COLLECTION_DATA,
+  COLLECTION_COURSES,
+  COLLECTION_VIDEOS,
+  COLLECTION_MEDIA,
 } from "@/lib/pocketbase";
-import { type CourseRecord } from "@/lib/course-utils";
+import { type CourseRecord, type VideoRecord, type MediaRecord } from "@/lib/course-utils";
 import LogoutButton from "@/components/LogoutButton";
 import CursoEditor from "./CursoEditor";
 
@@ -19,17 +20,19 @@ export default async function CursoDetailPage({ params }: Props) {
   const pb = await createServerClient();
   if (!pb.authStore.isValid) redirect("/admin");
 
-  let course: CourseRecord | undefined;
+  let course: CourseRecord;
+  let videos: VideoRecord[] = [];
+  let media: MediaRecord[] = [];
   try {
-    const pbAdmin = createAdminClient();
-    course = await pbAdmin
-      .collection(COLLECTION_DATA)
-      .getOne<CourseRecord>(id);
+    course = await pb.collection(COLLECTION_COURSES).getOne<CourseRecord>(id);
+    const byCourse = pb.filter("course = {:id}", { id });
+    [videos, media] = await Promise.all([
+      pb.collection(COLLECTION_VIDEOS).getFullList<VideoRecord>({ filter: byCourse, sort: "order" }),
+      pb.collection(COLLECTION_MEDIA).getFullList<MediaRecord>({ filter: byCourse, sort: "order" }),
+    ]);
   } catch {
     return notFound();
   }
-
-  if (!course) return notFound();
 
   return (
     <main className="min-h-screen bg-vanilla">
@@ -52,7 +55,12 @@ export default async function CursoDetailPage({ params }: Props) {
       </nav>
 
       <div className="max-w-4xl mx-auto px-4 md:px-6 py-10">
-        <CursoEditor course={course} />
+        <CursoEditor
+          course={course}
+          videos={videos}
+          resources={media.filter((m) => m.kind === "resource")}
+          gallery={media.filter((m) => m.kind === "gallery")}
+        />
       </div>
     </main>
   );

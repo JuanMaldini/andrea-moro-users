@@ -6,8 +6,15 @@
 "use client";
 
 import PocketBase from "pocketbase";
+import { PB_URL } from "./collections";
 
-const PB_URL = process.env.NEXT_PUBLIC_PB_URL ?? "";
+export {
+  COLLECTION_USERS,
+  COLLECTION_COURSES,
+  COLLECTION_VIDEOS,
+  COLLECTION_MEDIA,
+  pbFileUrl,
+} from "./collections";
 
 let pb: PocketBase | null = null;
 
@@ -38,9 +45,3 @@ export function getPocketBase(): PocketBase {
 
   return pb;
 }
-
-export const COLLECTION_USERS =
-  process.env.NEXT_PUBLIC_PB_USERS ?? "andreamoro_user";
-
-export const COLLECTION_DATA =
-  process.env.NEXT_PUBLIC_PB_DATA ?? "andreamoro_data";
