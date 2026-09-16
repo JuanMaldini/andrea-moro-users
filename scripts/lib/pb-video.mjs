@@ -119,12 +119,12 @@ export async function createVideoRecord(fields, localPath, uploadName) {
 export function probe(input) {
   const r = spawnSync("ffprobe", [
     "-v", "error",
-    "-show_entries", "stream=codec_type,codec_name,pix_fmt,color_transfer:format=duration",
+    "-show_entries", "stream=codec_type,codec_name,pix_fmt,color_transfer:format=duration,format_name",
     "-of", "json",
     input,
   ]);
   let j = {};
-  try { j = JSON.parse(r.stdout?.toString() || "{}"); } catch { /* */ }
+  try { if (r.status === 0) j = JSON.parse(r.stdout?.toString() || "{}"); } catch { /* */ }
   const streams = j.streams ?? [];
   const v = streams.find((s) => s.codec_type === "video") ?? {};
   const a = streams.find((s) => s.codec_type === "audio") ?? {};
@@ -134,6 +134,7 @@ export function probe(input) {
     pixFmt: v.pix_fmt ?? "",
     transfer: v.color_transfer ?? "",
     duration: Number(j.format?.duration ?? 0),
+    container: j.format?.format_name ?? "",
   };
 }
 
@@ -143,7 +144,23 @@ export const isHdr = (info) => ["arib-std-b67", "smpte2084"].includes(info.trans
 export async function hasFaststart(url) {
   const r = await fetch(url, { headers: { Range: "bytes=0-65535" } });
   if (!r.ok) return false;
-  const buf = Buffer.from(await r.arrayBuffer());
+  // A proxy may ignore Range and return the entire multi-GB file. Read only the prefix.
+  if (!r.body) return false;
+  const reader = r.body.getReader();
+  const chunks = [];
+  let length = 0;
+  try {
+    while (length < 65536) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value.subarray(0, 65536 - length));
+      chunks.push(chunk);
+      length += chunk.length;
+    }
+  } finally {
+    await reader.cancel();
+  }
+  const buf = Buffer.concat(chunks);
   let off = 0;
   while (off + 8 <= buf.length) {
     let size = buf.readUInt32BE(off);
@@ -164,7 +181,7 @@ export async function hasFaststart(url) {
  *  "encode" codec/bit-depth incompatible (HEVC, 10-bit, etc.)
  */
 export function decide(info, { isMp4, faststart }) {
-  const videoOk = info.vCodec === "h264" && (info.pixFmt === "" || info.pixFmt === "yuv420p" || info.pixFmt === "yuvj420p");
+  const videoOk = info.vCodec === "h264" && !isHdr(info) && (info.pixFmt === "yuv420p" || info.pixFmt === "yuvj420p");
   const audioOk = info.aCodec === "" || info.aCodec === "aac";
   if (!videoOk || !audioOk) return "encode";
   return isMp4 && faststart ? "skip" : "remux";
@@ -201,9 +218,12 @@ export function runFfmpeg(args) {
   return { ok: ff.status === 0, stderr: ff.stderr?.toString() ?? "" };
 }
 
-/** El resultado debe ser h264 y durar lo mismo que el original (±1 s). */
+/** Validate the actual output, including pixel format/audio/SDR and duration. */
 export function verifyOutput(input, expectedDuration) {
   const info = probe(input);
-  const durOk = !expectedDuration || Math.abs(info.duration - expectedDuration) <= 1;
-  return { ok: info.vCodec === "h264" && durOk, info };
+  const durOk = Number.isFinite(info.duration) && info.duration > 0 &&
+    (!expectedDuration || Math.abs(info.duration - expectedDuration) <= 1);
+  const compatible = decide(info, { isMp4: true, faststart: true }) === "skip";
+  const mp4 = info.container.split(",").includes("mp4");
+  return { ok: compatible && mp4 && durOk, info };
 }

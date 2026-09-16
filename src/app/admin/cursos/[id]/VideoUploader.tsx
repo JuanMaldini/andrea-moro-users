@@ -5,6 +5,7 @@ import { getPocketBase, COLLECTION_VIDEOS, pbFileUrl } from "@/lib/pocketbase-br
 import { createWithProgress, formatBytes } from "@/lib/upload";
 import type { VideoRecord } from "@/lib/course-utils";
 import { useSnackbar } from "@/components/Snackbar";
+import VideoThumbnail from "@/components/VideoThumbnail";
 
 interface UploadItem {
   file: File;
@@ -78,7 +79,6 @@ export default function VideoUploader({ courseId, slug, videos }: Props) {
     if (isFinite(dur) && dur > 0) {
       setDurations((prev) => ({ ...prev, [id]: dur }));
     }
-    setVideoLoaded((prev) => ({ ...prev, [id]: true }));
     setVideoErrors((prev) => {
       if (!prev[id]) return prev;
       const next = { ...prev };
@@ -321,13 +321,14 @@ export default function VideoUploader({ courseId, slug, videos }: Props) {
                     <span className="text-[9px] text-grisclarito uppercase">.{ext}</span>
                   </div>
                 ) : (
-                  <video
+                  <VideoThumbnail
                     src={videoUrl(v)}
                     className="w-24 h-14 object-cover bg-grisoscuro rounded-sm"
-                    preload="metadata"
-                    playsInline
-                    muted
                     onLoadedMetadata={(e) => handleVideoLoadedMetadata(v.id, e)}
+                    onLoadedData={() => setVideoLoaded((prev) => ({ ...prev, [v.id]: true }))}
+                    onSeeked={(e) => {
+                      if (e.currentTarget.readyState >= 2) setVideoLoaded((prev) => ({ ...prev, [v.id]: true }));
+                    }}
                     onError={() => handleVideoError(v)}
                   />
                 )}

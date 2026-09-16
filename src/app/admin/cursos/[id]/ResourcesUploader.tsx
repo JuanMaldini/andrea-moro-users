@@ -5,6 +5,7 @@ import { getPocketBase, COLLECTION_MEDIA, pbFileUrl } from "@/lib/pocketbase-bro
 import { createWithProgress } from "@/lib/upload";
 import ConfirmDelete from "@/components/ConfirmDelete";
 import { useSnackbar } from "@/components/Snackbar";
+import VideoThumbnail from "@/components/VideoThumbnail";
 import {
   resourceKind,
   stripExtension,
@@ -185,12 +186,9 @@ export default function ResourcesUploader({ courseId, resources }: Props) {
                       className="w-full h-full object-cover"
                     />
                   ) : kind === "video" ? (
-                    <video
+                    <VideoThumbnail
                       src={fileUrl(r)}
                       className="w-full h-full object-cover"
-                      preload="metadata"
-                      playsInline
-                      muted
                     />
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center gap-1">

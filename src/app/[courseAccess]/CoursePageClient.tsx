@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
+import VideoThumbnail from "@/components/VideoThumbnail";
 import { resourceKind, type VideoRecord, type MediaRecord } from "@/lib/course-utils";
 import { isValidCoursePassword } from "@/lib/auth";
 import { COLLECTION_VIDEOS, COLLECTION_MEDIA } from "@/lib/collections";
-import CoursePlayer from "./CoursePlayer";
+import CoursePlayer, { type CoursePlayerHandle } from "./CoursePlayer";
 
 type State = "presentation" | "access" | "videos";
 
@@ -29,7 +31,7 @@ export default function CoursePageClient({
   const [error, setError] = useState("");
   // Vídeo seleccionado en el reproductor (arranca con el primero, sin autoplay).
   const [activeVideoId, setActiveVideoId] = useState<string | null>(videos[0]?.id ?? null);
-  const [userPicked, setUserPicked] = useState(false);
+  const playerRef = useRef<CoursePlayerHandle>(null);
   const [previewResource, setPreviewResource] = useState<MediaRecord | null>(null);
   const [lightboxImg, setLightboxImg] = useState<MediaRecord | null>(null);
   const [lightboxVisible, setLightboxVisible] = useState(false);
@@ -183,9 +185,9 @@ export default function CoursePageClient({
             {activeVideo && (
               <div className="mb-4 shadow-sm">
                 <CoursePlayer
+                  ref={playerRef}
                   src={videoUrl(activeVideo)}
                   title={activeVideo.name}
-                  autoPlay={userPicked}
                 />
               </div>
             )}
@@ -196,7 +198,11 @@ export default function CoursePageClient({
                 return (
                   <button
                     key={video.id}
-                    onClick={() => { setUserPicked(true); setActiveVideoId(video.id); }}
+                    onClick={() => {
+                      // Commit src and call play within the same user gesture on Safari.
+                      flushSync(() => setActiveVideoId(video.id));
+                      playerRef.current?.play();
+                    }}
                     aria-current={active ? "true" : undefined}
                     className={`w-full text-left px-4 py-3 flex items-center gap-4 transition-colors ${active ? "bg-vanilla" : "hover:bg-vanilla"}`}
                   >
@@ -243,12 +249,9 @@ export default function CoursePageClient({
                             className="w-full h-full object-cover select-none"
                           />
                         ) : kind === "video" ? (
-                          <video
+                          <VideoThumbnail
                             src={mediaUrl(r)}
                             className="w-full h-full object-cover"
-                            preload="metadata"
-                            playsInline
-                            muted
                           />
                         ) : (
                           <div className="w-full h-full flex flex-col items-center justify-center gap-1">

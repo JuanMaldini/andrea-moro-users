@@ -1,17 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
+import { seekVideoPreview, videoPreviewSrc } from "@/lib/video-preview";
 
 interface Props {
   src: string;
   title: string;
-  /** true cuando el cambio de vídeo lo pidió la alumna (click en la lista) → reproduce. */
-  autoPlay: boolean;
+
 }
+
+export interface CoursePlayerHandle { play: () => void; }
 
 const ERROR_MSGS: Record<number, string> = {
   2: "Error de red al cargar el vídeo. Comprueba tu conexión.",
-  3: "El navegador no puede decodificar este vídeo. Puede que esté en formato H.265/HEVC (iPhone). Prueba con Safari o convierte el vídeo.",
+  3: "No se pudo decodificar el vídeo. Si vuelve a ocurrir, avisanos qué lección estás viendo.",
   4: "Este vídeo no está disponible o el formato no es soportado por tu navegador.",
 };
 
@@ -29,7 +31,7 @@ type FullscreenVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void }
  * Reproductor minimal con controles propios: play/pausa, barra de progreso,
  * tiempo y pantalla completa. Al terminar queda pausado.
  */
-export default function CoursePlayer({ src, title, autoPlay }: Props) {
+const CoursePlayer = forwardRef<CoursePlayerHandle, Props>(function CoursePlayer({ src, title }, ref) {
   const videoRef = useRef<FullscreenVideo>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -38,19 +40,68 @@ export default function CoursePlayer({ src, title, autoPlay }: Props) {
   const [buffering, setBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Nuevo vídeo → reinicia estado.
-  useEffect(() => {
+  const [nativeControls, setNativeControls] = useState(false);
+  const attemptRef = useRef(0);
+  const requestedRef = useRef(false);
+
+  // Preserve the media element across lessons, and reset before a new play request.
+  useLayoutEffect(() => {
+    attemptRef.current++;
+    requestedRef.current = false;
+    setBuffering(false);
     setPlaying(false);
     setCurrent(0);
     setDuration(0);
     setError(null);
   }, [src]);
 
+  useEffect(() => () => { attemptRef.current++; }, []);
+
+  useEffect(() => {
+    if (!buffering) return;
+    const timeout = setTimeout(() => {
+      setError("El vídeo está tardando en responder. Podés reintentar o usar los controles del navegador.");
+      setBuffering(false);
+    }, 15000);
+    return () => clearTimeout(timeout);
+  }, [buffering]);
+
+  function play() {
+    const v = videoRef.current;
+    if (!v) return;
+    const attempt = ++attemptRef.current;
+    requestedRef.current = true;
+    setError(null);
+    setBuffering(true);
+    if (v.error) v.load();
+    // Safari: play must happen inside the tap, before any await, effect or timer.
+    const failed = (reason: unknown) => {
+      if (attempt !== attemptRef.current) return;
+      requestedRef.current = false;
+      setPlaying(false);
+      setBuffering(false);
+      const name = reason instanceof Error ? reason.name : "UnknownError";
+      if (name === "AbortError") return;
+      setError(name === "NotAllowedError"
+        ? "El navegador bloqueó el inicio del vídeo. Tocá Reproducir para intentarlo de nuevo o usá los controles del navegador."
+        : ERROR_MSGS[v.error?.code ?? 0] ?? "No se pudo iniciar el vídeo. Reintentá o usá los controles del navegador.");
+      console.warn("Video playback failed", { name, code: v.error?.code, readyState: v.readyState, networkState: v.networkState });
+    };
+    try { v.play().catch(failed); } catch (reason) { failed(reason); }
+  }
+
+  useImperativeHandle(ref, () => ({ play }));
+
   function togglePlay() {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused || v.ended) v.play().catch(() => {});
-    else v.pause();
+    if (v.paused || v.ended) play();
+    else {
+      attemptRef.current++;
+      requestedRef.current = false;
+      v.pause();
+      setBuffering(false);
+    }
   }
 
   function seek(value: number) {
@@ -81,31 +132,33 @@ export default function CoursePlayer({ src, title, autoPlay }: Props) {
       <div ref={wrapRef} className="relative bg-negro group">
         <video
           ref={videoRef}
-          key={src}
-          src={src}
-          autoPlay={autoPlay}
+          src={videoPreviewSrc(src)}
+          controls={nativeControls}
           playsInline
           preload="metadata"
           className="w-full aspect-video bg-negro block"
-          onClick={togglePlay}
-          onPlay={() => { setPlaying(true); setError(null); }}
-          onPause={() => setPlaying(false)}
-          onEnded={() => setPlaying(false)}
+          onClick={nativeControls ? undefined : togglePlay}
+          onPlay={() => { requestedRef.current = true; setError(null); }}
+          onPause={() => { setPlaying(false); setBuffering(false); }}
+          onEnded={() => { requestedRef.current = false; setPlaying(false); setBuffering(false); }}
           onWaiting={() => setBuffering(true)}
-          onPlaying={() => setBuffering(false)}
-          onCanPlay={() => setBuffering(false)}
-          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+          onPlaying={() => { setPlaying(true); setBuffering(false); setError(null); }}
+          onLoadedMetadata={(e) => {
+            setDuration(e.currentTarget.duration);
+            if (!requestedRef.current) seekVideoPreview(e.currentTarget);
+          }}
           onDurationChange={(e) => setDuration(e.currentTarget.duration)}
           onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
           onError={(e) => {
             const code = e.currentTarget.error?.code ?? 0;
             setError(ERROR_MSGS[code] ?? "No se pudo reproducir el vídeo.");
             setPlaying(false);
+            setBuffering(false);
           }}
         />
 
         {/* Botón central de play cuando está pausado */}
-        {!playing && !error && (
+        {!playing && !buffering && !nativeControls && (
           <button
             type="button"
             onClick={togglePlay}
@@ -116,15 +169,15 @@ export default function CoursePlayer({ src, title, autoPlay }: Props) {
           </button>
         )}
 
-        {buffering && playing && (
+        {buffering && !nativeControls && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className="w-8 h-8 border-2 border-blanco/40 border-t-blanco rounded-full animate-spin" />
+            <span role="status" aria-label="Cargando vídeo" className="w-8 h-8 border-2 border-blanco/40 border-t-blanco rounded-full animate-spin" />
           </div>
         )}
       </div>
 
       {/* Barra de controles */}
-      <div className="bg-blanco px-3 py-2 flex items-center gap-3">
+      {!nativeControls && <div className="bg-blanco px-3 py-2 flex items-center gap-3">
         <button
           type="button"
           onClick={togglePlay}
@@ -160,15 +213,25 @@ export default function CoursePlayer({ src, title, autoPlay }: Props) {
         >
           ⛶
         </button>
-      </div>
+      </div>}
 
       <p className="sr-only">{title}</p>
 
       {error && (
-        <div className="mt-3 px-4 py-3 bg-rojo/10 border border-rojo/40 text-rojo text-xs leading-relaxed rounded">
+        <div role="alert" className="mt-3 px-4 py-3 bg-rojo/10 border border-rojo/40 text-rojo text-xs leading-relaxed rounded">
           ⚠ {error}
+          <div className="mt-2 flex flex-wrap gap-4">
+            <button type="button" className="underline" onClick={play}>Reintentar</button>
+            {!nativeControls && <button type="button" className="underline" onClick={() => {
+              if (videoRef.current) videoRef.current.controls = true;
+              setNativeControls(true);
+              play();
+            }}>Usar controles del navegador</button>}
+          </div>
         </div>
       )}
     </div>
   );
-}
+});
+
+export default CoursePlayer;

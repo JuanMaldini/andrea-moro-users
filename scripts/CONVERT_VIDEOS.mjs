@@ -54,7 +54,7 @@ async function main() {
       const url = videoFileUrl(video);
 
       const info = probe(url);
-      if (!info.vCodec) {
+      if (!info.vCodec || !Number.isFinite(info.duration) || info.duration <= 0) {
         log("SKIP: no se pudo leer el stream de vídeo (¿404 o no es vídeo?)");
         counts.unreadable++;
         continue;
@@ -91,7 +91,7 @@ async function main() {
           outputName
         );
         const remote = verifyOutput(videoFileUrl(created), info.duration);
-        if (!remote.ok) {
+        if (!remote.ok || !(await hasFaststart(videoFileUrl(created)))) {
           await api("DELETE", `collections/${VIDEOS}/records/${created.id}`).catch(() => {});
           throw new Error("la verificación remota falló; se descartó el nuevo y el original queda intacto");
         }
@@ -113,6 +113,7 @@ async function main() {
   log(`\n=== FIN ===`);
   log(`${APPLY ? "" : "[simulación] "}OK sin cambios: ${counts.skip} · remux: ${counts.remux} · encode: ${counts.encode} · ilegibles: ${counts.unreadable} · fallidos: ${counts.failed}`);
   log(`Log: ${log.file}`);
+  if (counts.failed || counts.unreadable) process.exitCode = 1;
 }
 
 main().catch((err) => {
