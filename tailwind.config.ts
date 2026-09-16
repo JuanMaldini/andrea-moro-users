@@ -20,6 +20,8 @@ const config: Config = {
       blanco:        "#ffffff",
       negro:         "#000000",
       gris200:       "#ebe7e5",
+      // Avisos (no viene de la paleta principal, pero hacía falta un tono legible)
+      ambar:         "#b45309",
     },
   },
   plugins: [],

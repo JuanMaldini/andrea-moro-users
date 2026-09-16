@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getPocketBase, COLLECTION_COURSES } from "@/lib/pocketbase-browser";
 import { COURSE_PASSWORD } from "@/lib/auth";
+import { useSnackbar } from "@/components/Snackbar";
 import {
   type CourseRecord,
   type VideoRecord,
@@ -39,6 +40,7 @@ export default function CursoEditor({ course, videos, resources, gallery }: Prop
 
   // Delete course
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const { show, snackbar } = useSnackbar();
   const [deleting, setDeleting] = useState(false);
 
   // Refs for debounced save
@@ -124,7 +126,7 @@ export default function CursoEditor({ course, videos, resources, gallery }: Prop
       router.push("/admin/cursos");
       router.refresh();
     } catch {
-      alert("Error al eliminar el curso.");
+      show("No se pudo eliminar el curso.", "error");
       setDeleting(false);
       setConfirmDelete(false);
     }
@@ -228,6 +230,8 @@ export default function CursoEditor({ course, videos, resources, gallery }: Prop
           </div>
         )}
       </section>
+
+      {snackbar}
     </div>
   );
 }

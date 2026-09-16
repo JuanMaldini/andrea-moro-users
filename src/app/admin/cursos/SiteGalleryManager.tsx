@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { getPocketBase, COLLECTION_MEDIA, pbFileUrl } from "@/lib/pocketbase-browser";
 import { createWithProgress } from "@/lib/upload";
 import { stripExtension, type MediaRecord } from "@/lib/course-utils";
+import ConfirmDelete from "@/components/ConfirmDelete";
+import { useSnackbar } from "@/components/Snackbar";
 
 type SiteKind = "site_gallery" | "site_andrea";
 
@@ -74,40 +76,25 @@ function GallerySection({
               <img
                 src={pbFileUrl(COLLECTION_MEDIA, item.id, item.file)}
                 alt=""
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover"
                 draggable={false}
               />
 
               {pendingDelete === item.id ? (
-                /* Confirmación inline */
-                <div className="absolute inset-0 bg-black/65 flex flex-col items-center justify-center gap-2 p-2">
-                  <p className="text-white text-xs font-semibold text-center leading-tight">
-                    ¿Eliminar<br/>esta foto?
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => { onDelete(item); setPendingDelete(null); }}
-                      className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded"
-                    >
-                      Sí
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPendingDelete(null)}
-                      className="px-3 py-1 bg-white/80 hover:bg-white text-black text-xs font-bold rounded"
-                    >
-                      No
-                    </button>
-                  </div>
-                </div>
+                <ConfirmDelete
+                  what="esta foto"
+                  onConfirm={() => { onDelete(item); setPendingDelete(null); }}
+                  onCancel={() => setPendingDelete(null)}
+                />
               ) : (
-                /* Botón X — siempre visible, más grande */
+                /* Botón X — siempre visible: en móvil no hay hover */
                 <button
                   type="button"
                   onClick={() => setPendingDelete(item.id)}
-                  title="Eliminar"
-                  className="absolute top-1 right-1 w-8 h-8 bg-red-500/75 hover:bg-red-600 text-white text-xl font-bold rounded-full flex items-center justify-center shadow transition-colors"
+                  title="Eliminar la foto"
+                  className="absolute top-1 right-1 w-7 h-7 bg-marron/85 hover:bg-rojo text-blanco text-sm rounded-full flex items-center justify-center shadow transition-colors"
                 >
                   ×
                 </button>
@@ -131,6 +118,7 @@ export default function SiteGalleryManager() {
   const [galleryProgress, setGalleryProgress] = useState(0);
   const [andreaUploading, setAndreaUploading] = useState(false);
   const [andreaProgress, setAndreaProgress] = useState(0);
+  const { show, snackbar } = useSnackbar();
 
   /* Fetch al montar */
   useEffect(() => {
@@ -189,6 +177,7 @@ export default function SiteGalleryManager() {
       }
     } catch (e) {
       console.error("[SiteGalleryManager] upload error:", e);
+      show("No se pudieron subir todas las fotos.", "error");
     } finally {
       setUploading(false);
       setProgress(0);
@@ -205,8 +194,10 @@ export default function SiteGalleryManager() {
     try {
       await pb.collection(COLLECTION_MEDIA).delete(item.id);
       setItems(items.filter((m) => m.id !== item.id));
+      show("Foto eliminada");
     } catch (e) {
       console.error("[SiteGalleryManager] delete error:", e);
+      show("No se pudo eliminar la foto.", "error");
     }
   }
 
@@ -214,7 +205,7 @@ export default function SiteGalleryManager() {
   return (
     <div className="px-4 pb-16 md:px-6 mt-12 border-t-2 border-marron/20 pt-10">
       <h1 className="text-xl font-bold text-marron mb-1">Galerías del sitio</h1>
-      <p className="text-xs text-gray-700 mb-2">
+      <p className="text-xs text-grisclarito mb-2">
         Se muestran en la página principal de andreamorotienda.com
       </p>
 
@@ -223,7 +214,7 @@ export default function SiteGalleryManager() {
       )}
 
       {error && (
-        <p className="text-sm text-red-500 py-4">{error}</p>
+        <p className="text-sm text-rojo py-4">{error}</p>
       )}
 
       {!loading && !error && (
@@ -265,6 +256,8 @@ export default function SiteGalleryManager() {
           />
         </>
       )}
+
+      {snackbar}
     </div>
   );
 }

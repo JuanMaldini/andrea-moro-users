@@ -3,6 +3,8 @@
 import { useState, useRef } from "react";
 import { getPocketBase, COLLECTION_MEDIA, pbFileUrl } from "@/lib/pocketbase-browser";
 import { createWithProgress } from "@/lib/upload";
+import ConfirmDelete from "@/components/ConfirmDelete";
+import { useSnackbar } from "@/components/Snackbar";
 import {
   resourceKind,
   stripExtension,
@@ -20,6 +22,9 @@ export default function ResourcesUploader({ courseId, resources }: Props) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Recurso con el aviso de borrado abierto — borrar un archivo no se puede deshacer.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const { show, snackbar } = useSnackbar();
 
   // Debounce para guardar los nombres de display mientras se escriben.
   const nameTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -96,6 +101,7 @@ export default function ResourcesUploader({ courseId, resources }: Props) {
   }
 
   async function deleteResource(resource: MediaRecord) {
+    setPendingDelete(null);
     const prev = items;
     const updated = items
       .filter((r) => r.id !== resource.id)
@@ -111,10 +117,11 @@ export default function ResourcesUploader({ courseId, resources }: Props) {
           .filter((r) => prevOrder.get(r.id) !== r.order)
           .map((r) => pb.collection(COLLECTION_MEDIA).update(r.id, { order: r.order }))
       );
+      show("Recurso eliminado");
     } catch {
       // Revierte si la red falló.
       setItems(prev);
-      alert("Error al eliminar el recurso.");
+      show("No se pudo eliminar el recurso.", "error");
     }
   }
 
@@ -173,6 +180,8 @@ export default function ResourcesUploader({ courseId, resources }: Props) {
                     <img
                       src={fileUrl(r)}
                       alt={r.name}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover"
                     />
                   ) : kind === "video" ? (
@@ -189,12 +198,23 @@ export default function ResourcesUploader({ courseId, resources }: Props) {
                       <span className="text-[9px] text-grisclarito uppercase">.{ext}</span>
                     </div>
                   )}
-                  <button
-                    onClick={() => deleteResource(r)}
-                    className="absolute top-1 right-1 bg-marron text-blanco text-xs w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rojo"
-                  >
-                    ×
-                  </button>
+                  {pendingDelete === r.id ? (
+                    <ConfirmDelete
+                      what={r.name || "este recurso"}
+                      onConfirm={() => deleteResource(r)}
+                      onCancel={() => setPendingDelete(null)}
+                    />
+                  ) : (
+                    /* Siempre visible: en móvil no hay hover y un botón invisible se toca sin querer. */
+                    <button
+                      type="button"
+                      onClick={() => setPendingDelete(r.id)}
+                      title="Eliminar el recurso"
+                      className="absolute top-1 right-1 bg-marron/85 text-blanco text-sm w-7 h-7 rounded-full flex items-center justify-center hover:bg-rojo transition-colors"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
 
                 {/* Nombre de display editable + nombre original */}
@@ -214,6 +234,8 @@ export default function ResourcesUploader({ courseId, resources }: Props) {
           })}
         </div>
       )}
+
+      {snackbar}
     </section>
   );
 }

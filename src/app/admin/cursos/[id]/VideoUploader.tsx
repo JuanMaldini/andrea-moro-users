@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { getPocketBase, COLLECTION_VIDEOS, pbFileUrl } from "@/lib/pocketbase-browser";
 import { createWithProgress, formatBytes } from "@/lib/upload";
 import type { VideoRecord } from "@/lib/course-utils";
+import { useSnackbar } from "@/components/Snackbar";
 
 interface UploadItem {
   file: File;
@@ -62,6 +63,9 @@ export default function VideoUploader({ courseId, slug, videos }: Props) {
   const [videoLoaded, setVideoLoaded] = useState<Record<string, boolean>>({});
   // Vídeo que se está reproduciendo en el modal
   const [playingVideo, setPlayingVideo] = useState<VideoRecord | null>(null);
+  // Vídeo con el aviso de borrado abierto — el borrado se lleva también el archivo.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const { show, snackbar } = useSnackbar();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -200,11 +204,12 @@ export default function VideoUploader({ courseId, slug, videos }: Props) {
       await persistOrder(reordered, prev);
     } catch (err: unknown) {
       setLocalVideos(prev);
-      alert(`Error al reordenar: ${err instanceof Error ? err.message : String(err)}`);
+      show(`Error al reordenar: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
   }
 
   async function deleteVideo(video: VideoRecord) {
+    setPendingDelete(null);
     const prev = localVideos;
     const updated = renumber(localVideos.filter((v) => v.id !== video.id));
     setLocalVideos(updated);
@@ -212,9 +217,10 @@ export default function VideoUploader({ courseId, slug, videos }: Props) {
       const pb = getPocketBase();
       await pb.collection(COLLECTION_VIDEOS).delete(video.id); // borra también el archivo
       await persistOrder(updated, prev);
+      show("Vídeo eliminado");
     } catch (err: unknown) {
       setLocalVideos(prev);
-      alert(`Error al eliminar: ${err instanceof Error ? err.message : String(err)}`);
+      show(`No se pudo eliminar: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
   }
 
@@ -352,27 +358,44 @@ export default function VideoUploader({ courseId, slug, videos }: Props) {
                   <p className="text-[11px] text-grisclarito mt-0.5">{formatDuration(dur)}</p>
                 ) : null}
                 {isUnsupportedExt && !err && (
-                  <p className="text-[11px] text-yellow-600 mt-0.5">
+                  <p className="text-[11px] text-ambar font-semibold mt-0.5">
                     ⚠ .{ext} solo en Safari. Convierte a MP4 H.264.
                   </p>
                 )}
               </div>
 
               {/* Controles orden / borrar */}
-              <div className="flex gap-1 flex-shrink-0">
-                <button onClick={() => moveVideo(idx, -1)} disabled={idx === 0}
-                  className="text-xs text-grisclarito border border-grisoscuro w-7 h-7 flex items-center justify-center hover:border-marron hover:text-marron transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                  ↑
-                </button>
-                <button onClick={() => moveVideo(idx, 1)} disabled={idx === localVideos.length - 1}
-                  className="text-xs text-grisclarito border border-grisoscuro w-7 h-7 flex items-center justify-center hover:border-marron hover:text-marron transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                  ↓
-                </button>
-                <button onClick={() => deleteVideo(v)}
-                  className="text-xs text-grisclarito border border-grisoscuro w-7 h-7 flex items-center justify-center hover:border-rojo hover:text-rojo transition-colors">
-                  ×
-                </button>
-              </div>
+              {pendingDelete === v.id ? (
+                /* Borrar un vídeo se lleva también el archivo: nunca con un solo toque. */
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <span className="text-[11px] text-rojo font-semibold leading-tight text-right">
+                    ¿Borrar?<br /><span className="text-grisclarito font-normal">no se deshace</span>
+                  </span>
+                  <button onClick={() => deleteVideo(v)}
+                    className="text-xs font-bold text-blanco bg-rojo px-2 h-7 flex items-center justify-center rounded-sm hover:opacity-85 transition-opacity">
+                    Sí
+                  </button>
+                  <button onClick={() => setPendingDelete(null)}
+                    className="text-xs font-bold text-marron border border-marron px-2 h-7 flex items-center justify-center rounded-sm hover:bg-marron hover:text-blanco transition-colors">
+                    No
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={() => moveVideo(idx, -1)} disabled={idx === 0}
+                    className="text-xs text-grisclarito border border-grisoscuro w-7 h-7 flex items-center justify-center hover:border-marron hover:text-marron transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                    ↑
+                  </button>
+                  <button onClick={() => moveVideo(idx, 1)} disabled={idx === localVideos.length - 1}
+                    className="text-xs text-grisclarito border border-grisoscuro w-7 h-7 flex items-center justify-center hover:border-marron hover:text-marron transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                    ↓
+                  </button>
+                  <button onClick={() => setPendingDelete(v.id)} title="Eliminar el vídeo"
+                    className="text-xs text-grisclarito border border-grisoscuro w-7 h-7 flex items-center justify-center hover:border-rojo hover:text-rojo transition-colors">
+                    ×
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -411,6 +434,8 @@ export default function VideoUploader({ courseId, slug, videos }: Props) {
           </div>
         </div>
       )}
+
+      {snackbar}
     </section>
   );
 }

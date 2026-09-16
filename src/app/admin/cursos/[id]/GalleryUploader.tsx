@@ -4,6 +4,8 @@ import { useState, useRef } from "react";
 import { getPocketBase, COLLECTION_MEDIA, pbFileUrl } from "@/lib/pocketbase-browser";
 import { createWithProgress } from "@/lib/upload";
 import { stripExtension, type MediaRecord } from "@/lib/course-utils";
+import ConfirmDelete from "@/components/ConfirmDelete";
+import { useSnackbar } from "@/components/Snackbar";
 
 interface Props {
   courseId: string;
@@ -16,6 +18,9 @@ export default function GalleryUploader({ courseId, gallery }: Props) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Foto con el aviso de borrado abierto — borrar un archivo no se puede deshacer.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const { show, snackbar } = useSnackbar();
 
   function imgUrl(photo: MediaRecord) {
     return pbFileUrl(COLLECTION_MEDIA, photo.id, photo.file);
@@ -63,15 +68,17 @@ export default function GalleryUploader({ courseId, gallery }: Props) {
   }
 
   async function deletePhoto(photo: MediaRecord) {
+    setPendingDelete(null);
     const prev = photos;
     // Optimista: quita la foto de la UI al instante.
     setPhotos(photos.filter((p) => p.id !== photo.id));
     try {
       await getPocketBase().collection(COLLECTION_MEDIA).delete(photo.id);
+      show("Foto eliminada");
     } catch {
       // Revierte si la red falló.
       setPhotos(prev);
-      alert("Error al eliminar la foto.");
+      show("No se pudo eliminar la foto.", "error");
     }
   }
 
@@ -124,18 +131,33 @@ export default function GalleryUploader({ courseId, gallery }: Props) {
               <img
                 src={imgUrl(photo)}
                 alt={photo.file}
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover"
               />
-              <button
-                onClick={() => deletePhoto(photo)}
-                className="absolute top-1 right-1 bg-marron text-blanco text-xs w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rojo"
-              >
-                ×
-              </button>
+              {pendingDelete === photo.id ? (
+                <ConfirmDelete
+                  what="esta foto"
+                  onConfirm={() => deletePhoto(photo)}
+                  onCancel={() => setPendingDelete(null)}
+                />
+              ) : (
+                /* Siempre visible: en móvil no hay hover y un botón invisible se toca sin querer. */
+                <button
+                  type="button"
+                  onClick={() => setPendingDelete(photo.id)}
+                  title="Eliminar la foto"
+                  className="absolute top-1 right-1 bg-marron/85 text-blanco text-sm w-7 h-7 rounded-full flex items-center justify-center hover:bg-rojo transition-colors"
+                >
+                  ×
+                </button>
+              )}
             </div>
           ))}
         </div>
       )}
+
+      {snackbar}
     </section>
   );
 }

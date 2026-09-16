@@ -1,9 +1,21 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createServerClient, COLLECTION_COURSES, COLLECTION_VIDEOS } from "@/lib/pocketbase";
-import { type CourseRecord, type VideoRecord, buildCourseUrl } from "@/lib/course-utils";
+import {
+  createServerClient,
+  COLLECTION_COURSES,
+  COLLECTION_VIDEOS,
+  COLLECTION_MEDIA,
+} from "@/lib/pocketbase";
+import { pbFileUrl } from "@/lib/collections";
+import {
+  type CourseRecord,
+  type VideoRecord,
+  type MediaRecord,
+  buildCourseUrl,
+  resourceKind,
+} from "@/lib/course-utils";
 import LogoutButton from "@/components/LogoutButton";
-import CopiarLink from "@/components/CopiarLink";
+import CourseCard from "./CourseCard";
 import SiteGalleryManager from "./SiteGalleryManager";
 
 export default async function CursosPage() {
@@ -17,13 +29,35 @@ export default async function CursosPage() {
   let courses: CourseRecord[] = [];
   // Cantidad de vídeos por curso
   const videoCount = new Map<string, number>();
+  // Imágenes por curso para el carrusel de la tarjeta (galería + recursos de imagen)
+  const courseImages = new Map<string, string[]>();
   try {
-    const [allCourses, allVideos] = await Promise.all([
+    const [allCourses, allVideos, allMedia] = await Promise.all([
       pb.collection(COLLECTION_COURSES).getFullList<CourseRecord>({ sort: "title" }),
       pb.collection(COLLECTION_VIDEOS).getFullList<Pick<VideoRecord, "course">>({ fields: "course" }),
+      pb.collection(COLLECTION_MEDIA).getFullList<MediaRecord>({
+        filter: 'kind = "gallery" || kind = "resource"',
+        sort: "order,created",
+      }),
     ]);
     courses = allCourses;
     for (const v of allVideos) videoCount.set(v.course, (videoCount.get(v.course) ?? 0) + 1);
+    // La galería va primero; los recursos solo si son imágenes.
+    const extraImages = new Map<string, string[]>();
+    for (const m of allMedia) {
+      if (!m.course) continue;
+      if (m.kind === "resource" && resourceKind(m.file) !== "image") continue;
+      const target = m.kind === "gallery" ? courseImages : extraImages;
+      const url = pbFileUrl(COLLECTION_MEDIA, m.id, m.file);
+      const list = target.get(m.course);
+      if (list) list.push(url);
+      else target.set(m.course, [url]);
+    }
+    for (const [courseId, urls] of extraImages) {
+      const list = courseImages.get(courseId);
+      if (list) list.push(...urls);
+      else courseImages.set(courseId, urls);
+    }
   } catch {
     // sin cursos o error de conexión
   }
@@ -56,45 +90,21 @@ export default async function CursosPage() {
             </Link>
           </div>
         ) : (
-          <div className="space-y-6">
-            {courses.map((course) => {
-              const videosCount = videoCount.get(course.id) ?? 0;
-              const copyUrl = course.slug && course.token
-                ? `${host}${buildCourseUrl(course.slug, course.token)}`.toLowerCase()
-                : null;
-
-              return (
-                <Link
-                  key={course.id}
-                  href={`/admin/cursos/${course.id}`}
-                  className="block bg-blanco border-2 border-marron rounded-lg overflow-hidden hover:shadow-xl transition-all hover:border-marroncalido group"
-                >
-                  {/* Sección de Título y Vídeos en un row */}
-                  <div className="bg-marron px-3 md:px-4 py-3 md:py-3 flex items-center justify-between gap-3 border-b-2 border-grisoscuro group-hover:bg-marroncalido transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm md:text-base font-bold text-blanco break-words">
-                        {course.title || "Sin título"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <p className="text-sm md:text-base font-bold text-blanco">
-                        {videosCount}
-                      </p>
-                      <p className="text-xs md:text-sm text-blanco/90 font-medium">
-                        {videosCount === 1 ? "vid." : "vid."}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Fila de acciones: Editar · WhatsApp · Copiar · Abrir */}
-                  {copyUrl && (
-                    <div className="px-2 py-2 bg-vanilla flex items-stretch gap-1">
-                      <CopiarLink url={copyUrl} courseId={course.id} />
-                    </div>
-                  )}
-                </Link>
-              );
-            })}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 md:gap-4 max-w-[1600px] mx-auto">
+            {courses.map((course) => (
+              <CourseCard
+                key={course.id}
+                courseId={course.id}
+                title={course.title}
+                videosCount={videoCount.get(course.id) ?? 0}
+                url={
+                  course.slug && course.token
+                    ? `${host}${buildCourseUrl(course.slug, course.token)}`.toLowerCase()
+                    : null
+                }
+                images={courseImages.get(course.id) ?? []}
+              />
+            ))}
           </div>
         )}
       </div>

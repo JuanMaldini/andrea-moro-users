@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { resourceKind, type VideoRecord, type MediaRecord } from "@/lib/course-utils";
-import { COURSE_PASSWORD } from "@/lib/auth";
+import { isValidCoursePassword } from "@/lib/auth";
 import { COLLECTION_VIDEOS, COLLECTION_MEDIA } from "@/lib/collections";
 import CoursePlayer from "./CoursePlayer";
 
@@ -59,7 +59,7 @@ export default function CoursePageClient({
   function handleAccessSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (clave.trim().toLowerCase() === COURSE_PASSWORD.toLowerCase()) {
+    if (isValidCoursePassword(clave)) {
       try { sessionStorage.setItem(sessionKey, JSON.stringify({ validated: true })); } catch { /* */ }
       setState("videos");
     } else {
@@ -238,6 +238,8 @@ export default function CoursePageClient({
                             src={mediaUrl(r)}
                             alt={r.name}
                             draggable={false}
+                            loading="lazy"
+                            decoding="async"
                             className="w-full h-full object-cover select-none"
                           />
                         ) : kind === "video" ? (
@@ -280,6 +282,8 @@ export default function CoursePageClient({
                   src={mediaUrl(photo)}
                   alt=""
                   draggable={false}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover select-none"
                 />
               </button>
