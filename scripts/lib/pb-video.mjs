@@ -15,8 +15,7 @@ import { join } from "path";
 
 // ── .env ──────────────────────────────────────────────────────────────────
 const envPath = new URL("../../.env", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
-if (!existsSync(envPath)) { console.error("No se encontró .env"); process.exit(1); }
-const envContent = readFileSync(envPath, "utf-8");
+const envContent = existsSync(envPath) ? readFileSync(envPath, "utf-8") : "";
 export function envVal(key) {
   const m = envContent.match(new RegExp(`^${key}=(.*)$`, "m"));
   return m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
